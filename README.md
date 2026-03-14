@@ -367,6 +367,6 @@ Copyright 2026 Luis Salgado (https://salgadoia.com)
 
 ## Autor
 
-**Luis Salgado** — [SalgadoIA](https://salgadoia.com) · [NorteIA](https://norteia.com)
+**Luis Salgado** — [SalgadoIA](https://salgadoia.com) · [NorteIA](https://norteia.es)
 
 <sub>Builded by SalgadoIA</sub>
