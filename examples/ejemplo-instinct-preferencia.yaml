@@ -1,0 +1,30 @@
+---
+id: castellano-como-idioma-por-defecto
+trigger: "al generar cualquier output de texto"
+confidence: 0.95
+domain: "workflow-general"
+source: "session-observation"
+scope: global
+---
+
+# Castellano como idioma por defecto
+
+## Action
+Siempre generar contenido en castellano a menos que:
+- El usuario pida explicitamente otro idioma
+- El contexto sea codigo (comentarios en ingles si el proyecto lo usa)
+- Sea un fichero tecnico con convencion en ingles (README de repo publico, etc.)
+
+En caso de duda, preguntar antes de generar en otro idioma.
+
+## Evidence
+- El usuario corrigio el idioma a castellano 12+ veces en primeras sesiones
+- Establecido en identity.json como language: "es"
+- Nunca contradicho desde que se establecio
+- Aplica a todos los proyectos sin excepcion
+- Ultima observacion: 2026-03-14
+
+## Notas
+Este es un ejemplo de instinct tipo "preferencia" -- una eleccion personal
+del usuario que debe respetarse siempre. Las preferencias suelen tener
+confidence muy alta porque son confirmadas explicitamente.

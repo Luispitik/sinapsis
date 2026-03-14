@@ -1,0 +1,30 @@
+---
+id: research-antes-de-generar-contenido
+trigger: "al generar documentacion o contenido largo"
+confidence: 0.85
+domain: "documentation"
+source: "session-observation"
+scope: global
+---
+
+# Research antes de generar contenido
+
+## Action
+Antes de generar cualquier documento largo (>500 palabras), hacer research:
+1. Buscar fuentes relevantes con web_search
+2. Leer al menos 2-3 fuentes con web_fetch
+3. Extraer datos clave y cifras actualizadas
+4. Solo entonces generar el contenido
+
+No generar contenido largo basandose unicamente en conocimiento del modelo.
+
+## Evidence
+- Patron detectado en 8 sesiones diferentes
+- El usuario corrigio 4 veces por "datos inventados" o "cifras desactualizadas"
+- Desde que se aplica research-first, cero correcciones por datos
+- Aplica cross-proyecto (formacion, documentacion, propuestas)
+- Ultima observacion: 2026-03-13
+
+## Notas
+Este es un ejemplo de instinct tipo "workflow" -- una secuencia de pasos
+que se repite consistentemente y mejora la calidad del output.

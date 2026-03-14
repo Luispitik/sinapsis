@@ -1,0 +1,36 @@
+---
+id: verificar-overlay-network-antes-deploy
+trigger: "al hacer deploy con Docker Swarm"
+confidence: 0.75
+domain: "deployment"
+source: "session-observation"
+scope: project
+type: gotcha
+severity: high
+---
+
+# Verificar overlay network antes de deploy
+
+## Action
+Antes de ejecutar `docker stack deploy`, verificar que la overlay network
+existe y esta accesible desde todos los nodos del cluster:
+
+```bash
+docker network ls | grep mi-overlay
+docker network inspect mi-overlay
+```
+
+Si no existe, crearla con:
+```bash
+docker network create --driver overlay --attachable mi-overlay
+```
+
+## Evidence
+- Error detectado 3 veces en sesiones de deploy
+- Cada vez el deploy fallaba silenciosamente por network missing
+- Solucion siempre era crear/recrear la overlay network
+- Ultima observacion: 2026-03-10
+
+## Notas
+Este es un ejemplo de instinct tipo "gotcha" -- un problema tecnico
+recurrente que se detecta por patron de error + resolucion.

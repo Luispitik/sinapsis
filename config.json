@@ -1,0 +1,59 @@
+{
+  "version": "1.1-sinapsis",
+  "observer": {
+    "model": "haiku",
+    "min_observations_before_instinct": 3,
+    "min_observations_to_analyze": 10
+  },
+  "observe": {
+    "max_file_size_mb": 10,
+    "archive_retention_days": 30
+  },
+  "domains": [
+    "workflow-general",
+    "web-development",
+    "saas-development",
+    "deployment",
+    "automation",
+    "documentation",
+    "testing",
+    "security"
+  ],
+  "global_compatible_domains": [
+    "workflow-general",
+    "security",
+    "testing",
+    "documentation",
+    "automation"
+  ],
+  "marcas": [],
+  "thresholds": {
+    "promote": 0.8,
+    "promote_min_projects": 2,
+    "decay_per_week": 0.02,
+    "confirm_boost": 0.1,
+    "contradict_penalty": -0.1,
+    "archive_below": 0.2
+  },
+  "hooks": {
+    "observe_pre": true,
+    "observe_post": true,
+    "async": true,
+    "timeout_seconds": 10
+  },
+  "export": {
+    "default_min_confidence": 0.5,
+    "include_evidence": false
+  },
+  "gotcha": {
+    "default_severity": "medium",
+    "auto_detect": true,
+    "promote_threshold": 0.75,
+    "promote_min_projects": 2
+  },
+  "watchdog": {
+    "error_patterns": ["FATAL", "PANIC", "OOM", "segfault", "killed", "ENOSPC"],
+    "log_file": "watchdog.log",
+    "max_log_lines": 1000
+  }
+}

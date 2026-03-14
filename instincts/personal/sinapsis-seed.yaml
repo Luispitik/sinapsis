@@ -1,0 +1,19 @@
+---
+id: leer-instrucciones-antes-de-ejecutar
+trigger: "al activar cualquier skill"
+confidence: 0.9
+domain: "workflow-general"
+source: "seed"
+scope: global
+---
+
+# Leer instrucciones antes de ejecutar
+
+## Action
+Siempre leer SKILL.md completo antes de ejecutar cualquier skill o comando.
+No asumir que sabes como funciona una skill -- leer primero, ejecutar despues.
+
+## Evidence
+- Instinct semilla incluido con Sinapsis
+- Patron universal: leer documentacion antes de actuar reduce errores
+- Aplica a todas las skills, todos los proyectos

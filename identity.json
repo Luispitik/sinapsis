@@ -1,0 +1,12 @@
+{
+  "name": "{{TU_NOMBRE}}",
+  "role": "{{TU_ROL}}",
+  "stack": [
+    "{{TECNOLOGIA_1}}",
+    "{{TECNOLOGIA_2}}",
+    "{{TECNOLOGIA_3}}"
+  ],
+  "marcas": [],
+  "location": "{{TU_CIUDAD}}",
+  "language": "es"
+}
