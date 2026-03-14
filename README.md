@@ -359,6 +359,10 @@ Gracias a affaan-m por abrir el camino.
 
 Apache 2.0 — ver [LICENSE](./LICENSE)
 
+```
+Copyright 2026 Luis Salgado (https://salgadoia.com)
+```
+
 ---
 
 ## Autor
