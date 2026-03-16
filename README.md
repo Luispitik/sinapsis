@@ -367,6 +367,14 @@ Copyright 2026 Luis Salgado (https://salgadoia.com)
 
 ## Autor
 
-**Luis Salgado** — [SalgadoIA](https://salgadoia.com) · [NorteIA](https://norteia.es)
+Creado por **Luis Salgado** — **NorteIA** / **SalgadoIA**
+- Web: [salgadoia.com](https://salgadoia.com)
+- LinkedIn: [linkedin.com/in/luis-salgado-salgado](https://linkedin.com/in/luis-salgado-salgado)
 
-<sub>Builded by SalgadoIA</sub>
+---
+
+> **¿Quieres skills como esta, personalizadas para tu negocio?**
+>
+> Esta es la versión genérica y open-source. En **NorteIA** diseñamos skills a medida para empresas: onboarding de clientes, generación de propuestas, automatización de procesos comerciales, y mucho más.
+>
+> Contacta con nosotros en [norteia.es](https://norteia.es) o [salgadoia.com](https://salgadoia.com)
