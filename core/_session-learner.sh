@@ -208,16 +208,44 @@ try {
       }
       if (!Array.isArray(registry.projects)) registry.projects = [];
 
-      let entry = registry.projects.find(p => p && p.id === projectHash);
-      if (!entry) {
-        entry = { id: projectHash, name: projectName, root: projectRoot, remote: projectRemote, created: now, last_seen: now };
-        registry.projects.push(entry);
-      } else {
-        if (projectName && projectName !== projectHash) entry.name = projectName;
-        if (projectRoot) entry.root = projectRoot;
-        if (projectRemote) entry.remote = projectRemote;
-        entry.last_seen = now;
+      // Cross-OS de-dup: the project id is sha256(remote || root); for a project with
+      // no git remote the id is derived from the root, which differs per OS
+      // (/Users/me/Proj vs C:/Users/Me/Proj), so the SAME project gets a different id on
+      // each machine — two entries for one project when the registry is shared (e.g. via
+      // a synced folder). We match on a cross-OS-stable key (the remote when present, else
+      // the project name), register every per-OS id as an alias, and record each OS root.
+      function osFamily(p) {
+        // Windows: "C:\\", "C:/" or Git-Bash "/c/"; everything else (Linux, macOS) is posix.
+        return (/^[a-zA-Z]:[\\/]/.test(p) || /^\/[a-zA-Z]\//.test(p)) ? "windows" : "posix";
       }
+      const crossKey = (projectRemote && projectRemote.trim())
+        ? "remote:" + projectRemote.trim().toLowerCase()
+        : "name:" + (projectName || "").toLowerCase();
+
+      let entry = registry.projects.find(p => p && p.id === projectHash)
+        || registry.projects.find(p => p && Array.isArray(p.aliases) && p.aliases.includes(projectHash))
+        || (crossKey !== "name:" ? registry.projects.find(p => p && p.crossKey === crossKey) : null);
+
+      if (!entry) {
+        entry = { id: projectHash, crossKey: crossKey, name: projectName, root: projectRoot,
+                  roots: {}, remote: projectRemote, aliases: [], created: now, last_seen: now };
+        registry.projects.push(entry);
+      }
+      if (!Array.isArray(entry.aliases)) entry.aliases = [];
+      if (entry.id !== projectHash && !entry.aliases.includes(projectHash)) entry.aliases.push(projectHash);
+      if (projectName && projectName !== projectHash) entry.name = projectName;
+      if (projectRoot) {
+        entry.root = projectRoot;                       // most-recently-seen OS path
+        if (!entry.roots || typeof entry.roots !== "object") entry.roots = {};
+        entry.roots[osFamily(projectRoot)] = projectRoot;  // { posix, windows }
+      }
+      if (projectRemote) {
+        entry.remote = projectRemote;
+        entry.crossKey = "remote:" + projectRemote.trim().toLowerCase();  // upgrade key if a remote appears later
+      } else if (!entry.crossKey) {
+        entry.crossKey = crossKey;
+      }
+      entry.last_seen = now;
 
       // Atomic write: tmp + rename (still needed for crash safety)
       const tmpPath = registryPath + ".tmp." + process.pid;

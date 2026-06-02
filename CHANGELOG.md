@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Cross-OS project de-dup in the registry** (`_session-learner.sh`): the per-project id is `sha256(remote || root)`, so a project with **no git remote** gets a different id on each OS (its root differs — `/Users/me/Proj` vs `C:/Users/Me/Proj`). When the registry is shared between machines (e.g. a synced folder), the same project surfaced as two entries — duplicating it in `/projects`, `/eod` and cross-project instinct search. The learner now matches on a cross-OS-stable key (the git remote when present, otherwise the project name), so the two sightings collapse into one entry: each per-OS id is preserved in `aliases[]`, and each observed root is stored under `roots.{posix,windows}`. Projects **with** a remote already shared one id and are unaffected; the remote key takes precedence over the name, so two distinct same-named projects do not merge. Purely additive — the new `aliases`, `roots` and `crossKey` fields are optional and ignored by readers that don't use them.
+
+### Tests
+
+- New `tests/test-crossos-registry.sh` — 5 hermetic tests (real hook driven via a sandbox `HOME`): two-OS no-remote sighting collapses to one entry, both `roots.{posix,windows}` recorded, the second per-OS id registered as an alias, remote key beats name for same-named projects, and idempotency on re-run. Existing suites re-run clean: `test-install-upgrade` 21/21, `test-registry-isolation` 4/4, `test-eod-gather` 8/8.
+
+---
+
 ## v4.8.1 (2026-07-17)
 
 ### Fixed
