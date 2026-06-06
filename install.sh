@@ -60,17 +60,27 @@ else
     echo -e "${GREEN}  OK${NC} Node.js $NODE_VER detected"
 fi
 
+# Windows-safe Python detection: validate --version before accepting a command.
+# On Windows the `python3` alias is the Microsoft Store shim — it answers
+# `command -v` but does NOT execute (prints a notice and exits non-zero). With
+# `set -e`, the old `PYTHON_VER=$(python3 --version)` aborted the WHOLE install.
+# Try `py -3` first (the real launcher), and only accept a command whose
+# --version actually reports Python 3.x. The `|| true` guards set -e.
 PYTHON_CMD=""
-if command -v python3 &> /dev/null; then
-    PYTHON_CMD="python3"
-elif command -v python &> /dev/null && python --version 2>&1 | grep -q "Python 3"; then
-    PYTHON_CMD="python"
-fi
+for candidate in "py -3" python3 python python3.12 python3.11 python3.10; do
+    cmd=$(echo "$candidate" | awk '{print $1}')
+    if command -v "$cmd" >/dev/null 2>&1; then
+        if $candidate --version 2>&1 | grep -qE "Python 3\.(9|10|11|12|13)"; then
+            PYTHON_CMD="$candidate"
+            break
+        fi
+    fi
+done
 if [ -z "$PYTHON_CMD" ]; then
     echo -e "${YELLOW}  ! Python 3 not found — observation hooks will be disabled${NC}"
     echo -e "${YELLOW}    Install it: https://python.org (optional but recommended)${NC}"
 else
-    PYTHON_VER=$($PYTHON_CMD --version)
+    PYTHON_VER=$($PYTHON_CMD --version 2>&1 || true)
     echo -e "${GREEN}  OK${NC} $PYTHON_VER detected"
 fi
 
