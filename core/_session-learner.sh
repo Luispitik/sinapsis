@@ -1,9 +1,9 @@
 #!/bin/bash
 # Session Learner - Sinapsis v4.3.3
 # Stop hook: five detectors —
-#   1. error-fix pairs (error → same tool success within 5 events)
-#   2. user-corrections (same file edited 2+ times within 10 events)
-#   3. workflow-chains (tool trigram repeated 2+ times)
+#   1. error-fix pairs (validated error → same tool success within 5 events)
+#   2. user-corrections (same file edited 2+ times within 10 events; by-design files excluded)
+#   3. workflow-chains (tool trigram repeated 5+ times, >=2 distinct tools, >=1 non-generic)
 #   4. repetitions (same error pattern across 3+ sessions — cross-session memory)
 #   5. agent-patterns (subagent tool sequences captured from Agent tool calls)
 # Also writes context.md per project.
@@ -57,6 +57,15 @@ try {
 } catch(e) { process.exit(0); }
 
 if (lines.length < 3) process.exit(0);
+
+// v4.8.1: validate is_error against hard failure markers. Observations written by
+// observers < v4.8.1 flagged is_error on any output whose CONTENT mentioned "error"
+// (e.g. a successful Read of source code). Do not trust the flag alone.
+const HARD_ERR_RE = /(tool_use_error|Permission denied|command not found|No such file or directory|InputValidationError|String to replace not found|Traceback \(most recent call last\)|fatal: |npm ERR!|\bEPERM\b|\bENOENT\b|\bEACCES\b|UnicodeEncodeError|exit code [1-9]|syntax error|was blocked|Web search error)/;
+function isRealError(l) {
+  if (!l || !l.is_error) return false;
+  return HARD_ERR_RE.test((l.err_msg || "") + "\n" + (l.output || "").slice(0, 600));
+}
 
 // ── JOB 1: Write project context.md (ALWAYS — not just when proposals exist) ──
 const projectDir = path.dirname(obsFile);
@@ -132,9 +141,9 @@ try {
   // Error patterns count (for proposals hint)
   let errorCount = 0;
   for (let i = 0; i < lines.length - 1; i++) {
-    if (!lines[i].is_error) continue;
+    if (!isRealError(lines[i])) continue;
     for (let j = i+1; j < Math.min(i+6, lines.length); j++) {
-      if (lines[j].tool === lines[i].tool && !lines[j].is_error) {
+      if (lines[j].tool === lines[i].tool && !isRealError(lines[j])) {
         errorCount++;
         break;
       }
@@ -257,16 +266,17 @@ try {
 const proposedIds = new Set(proposals.proposals.map(p => p.id));
 const found = [];
 
-// PATTERN 1: error → same tool success within 5 events (uses is_error flag from observe_v3)
+// PATTERN 1: error → same tool success within 5 events (uses is_error flag from observe_v3,
+// re-validated against hard failure markers — see isRealError)
 // Dedup: one proposal per tool per day
 for (let i = 0; i < lines.length - 1; i++) {
-  if (!lines[i].is_error) continue;
+  if (!isRealError(lines[i])) continue;
 
   const toolId = "fix-" + lines[i].tool.toLowerCase().replace(/[^a-z]/g, "");
   if (existing.has(toolId) || proposedIds.has(toolId)) continue;
 
   for (let j = i+1; j < Math.min(i+6, lines.length); j++) {
-    if (lines[j].tool === lines[i].tool && !lines[j].is_error) {
+    if (lines[j].tool === lines[i].tool && !isRealError(lines[j])) {
       found.push({
         type: "error_resolution",
         id: toolId,
@@ -290,11 +300,15 @@ const editEvents = lines
   .map((l, idx) => ({ ...l, _idx: idx }))
   .filter(l => l.event === "tool_complete" && (l.tool === "Edit" || l.tool === "Write"));
 
+// v4.8.1: files that are re-edited BY DESIGN (journals, control panels, wiki pages
+// appended item-by-item during /eod dual save) are not correction signals.
+const BYDESIGN_RE = /(?:^|[\\\/])(hot\.md|brief\.md|working-memory\.md|MEMORY\.md|CLAUDE\.md|\d{4}-\d{2}-\d{2}\.md)$|[\\\/](cerebro|briefs|_daily-summaries|daily-summaries)[\\\/]/i;
+
 const correctedFiles = {};
 for (let i = 0; i < editEvents.length - 1; i++) {
   let fileA = "";
   try { const inp = JSON.parse(editEvents[i].input || "{}"); fileA = inp.file_path || ""; } catch(e) {}
-  if (!fileA) continue;
+  if (!fileA || BYDESIGN_RE.test(fileA)) continue;
 
   for (let j = i + 1; j < editEvents.length; j++) {
     if (editEvents[j]._idx - editEvents[i]._idx > 10) break; // window of 10 events
@@ -330,6 +344,11 @@ const toolSeq = lines
   .filter(l => l.event === "tool_complete")
   .map(l => l.tool);
 
+// v4.8.1: generic-tool trigrams (Bash>Bash>Bash x380...) are coding activity, not
+// workflows — one session produced 154 junk proposals. Only propose trigrams that
+// include a NON-generic tool (MCP, custom), have >= 2 distinct tools, and repeat 5+.
+const GENERIC_TOOLS = new Set(["Bash","Read","Edit","Write","Grep","Glob","ToolSearch","AskUserQuestion","Skill","Task","TodoWrite","WebSearch","WebFetch","Agent","Monitor","ScheduleWakeup","NotebookEdit","TaskCreate","TaskUpdate"]);
+
 if (toolSeq.length >= 6) {
   const trigramCounts = {};
   for (let i = 0; i <= toolSeq.length - 3; i++) {
@@ -338,8 +357,10 @@ if (toolSeq.length >= 6) {
   }
 
   for (const [seq, count] of Object.entries(trigramCounts)) {
-    if (count < 2) continue;
+    if (count < 5) continue;
     const parts = seq.split(">");
+    if (new Set(parts).size < 2) continue;              // homogeneous = noise
+    if (parts.every(p => GENERIC_TOOLS.has(p))) continue; // all-generic = coding activity
     const wfId = "workflow-" + parts.map(p => p.toLowerCase().replace(/[^a-z]/g, "")).join("-");
     if (existing.has(wfId) || proposedIds.has(wfId)) continue;
     found.push({
@@ -403,8 +424,9 @@ for (const ae of agentEvents) {
   // \u0027 is single-quote: avoids closing the bash single-quoted node -e block
   const agentTypeMatch = output.match(/subagent_type[=:]?\s*["\u0027]?(\w+)/i);
   const agentType = agentTypeMatch ? agentTypeMatch[1] : "general";
-  // If agent output contains error keywords, propose a pattern
-  const hasError = /\berror\b|\bfailed\b|\bexception\b/i.test(output);
+  // v4.8.1: substring keywords flagged any agent whose report MENTIONED errors;
+  // require a validated hard failure marker instead.
+  const hasError = isRealError(ae);
   if (hasError) {
     const agId = "agent-error-" + agentType.toLowerCase();
     if (existing.has(agId) || proposedIds.has(agId)) continue;
