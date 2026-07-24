@@ -109,7 +109,7 @@ Parallel systems (not part of the confidence pipeline):
 - Enriched proposals with project_name, sample_input, sample_output, err_msg
 - Session-based proposals (overwrite on new day, not accumulative)
 - Reads last 1000 lines of observations (covers parallel sessions)
-- **Cross-OS registry de-dup**: matches the same project across machines by a stable key (git remote, else project name) so a no-remote project seen from macOS/Linux and Windows collapses into one `_sinapsis-projects.json` entry; per-OS ids are kept as `aliases`, both roots under `roots.{posix,windows}`
+- **Cross-OS registry de-dup**: matches the same project across machines by a stable key (git remote, else project name — the name key only across OS families, never on the same machine) so a no-remote project seen from macOS/Linux and Windows collapses into one `_sinapsis-projects.json` entry; per-OS ids are kept as `aliases`, both roots under `roots.{posix,windows}`, and a migration pass cures duplicates that pre-date the feature
 - Pure deterministic Node.js, NO LLM
 
 ### _dream.sh — Dream Cycle / Index Hygiene (501 lines)

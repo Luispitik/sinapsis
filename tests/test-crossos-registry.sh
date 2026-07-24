@@ -12,6 +12,12 @@
 # learner; it reads process.env.HOME, so we point HOME at a sandbox).
 # Run: bash tests/test-crossos-registry.sh
 
+# Git Bash (MSYS) rewrites posix-looking argv (/Users/...) into C:/Program Files/Git/...
+# before node ever sees it, so every posix fixture silently becomes a windows path and
+# roots.posix never registers. Disable path conversion for this whole suite.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 PASS=0
 FAIL=0
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -82,7 +88,7 @@ BOTH=$(echo "$R" | field "(r.projects[0]&&r.projects[0].roots&&r.projects[0].roo
 [ "$BOTH" = "yes" ] && pass "Both posix and windows roots recorded" \
   || fail "roots incomplete: $(echo "$R" | field 'JSON.stringify((r.projects[0]||{}).roots)')"
 
-ALIAS=$(echo "$R" | field "(r.projects[0]&&((r.projects[0].aliases||[]).includes('bbbbbbbbbbbb')||r.projects[0].id==='bbbbbbbbbbbb'))?'yes':'no'")
+ALIAS=$(echo "$R" | field "(r.projects[0]&&(r.projects[0].aliases||[]).includes('bbbbbbbbbbbb'))?'yes':'no'")
 [ "$ALIAS" = "yes" ] && pass "Second per-OS id registered as alias" \
   || fail "alias missing: $(echo "$R" | field 'JSON.stringify((r.projects[0]||{}).aliases)')"
 
@@ -112,6 +118,63 @@ echo "--- Idempotency ---"
 add_run "$H" "aaaaaaaaaaaa" "CrossProj" "/Users/tester/CrossProj"
 N3=$(reg "$H" | field "r.projects.length")
 [ "$N3" = "1" ] && pass "Re-run of an existing sighting is idempotent" || fail "Expected 1 entry, got '$N3'"
+
+# ── Test 6 (anti-regression): same name, SAME OS family must stay separate ──
+# ~/work/app and ~/personal/app are two different no-remote projects that happen to
+# share a folder name. The name-key fallback must NOT collapse them: it only applies
+# when the OS families differ (the genuine cross-OS scenario).
+echo "--- Same name, same OS family stays separate ---"
+H3=$(newhome)
+add_run "$H3" "eeeeeeeeeeee" "app" "/Users/tester/work/app"
+add_run "$H3" "ffffffffffff" "app" "/Users/tester/personal/app"
+R3=$(reg "$H3")
+N4=$(echo "$R3" | field "r.projects.length")
+[ "$N4" = "2" ] && pass "Two same-named no-remote projects on the SAME family stay 2 entries" \
+  || fail "Expected 2 entries, got '$N4': $(echo "$R3" | field 'JSON.stringify(r.projects.map(p=>p.root))')"
+BOTHROOTS=$(echo "$R3" | field "(r.projects.some(p=>p.root==='/Users/tester/work/app')&&r.projects.some(p=>p.root==='/Users/tester/personal/app'))?'yes':'no'")
+[ "$BOTHROOTS" = "yes" ] && pass "Neither same-family root was overwritten" \
+  || fail "a root disappeared: $(echo "$R3" | field 'JSON.stringify(r.projects.map(p=>p.root))')"
+
+# ── Tests 7-8: migration pass cures PRE-EXISTING duplicates ──
+# A registry synced via Nextcloud already contains both per-OS entries (written by
+# machines running the pre-feature learner: no crossKey, no roots map). One learner
+# run must merge them: union aliases/roots, oldest created, newest last_seen.
+echo "--- Migration pass: pre-existing duplicates ---"
+H4=$(newhome)
+node -e 'const fs=require("fs");
+  const reg={version:"4.1",system:"sinapsis",projects:[
+    {id:"111111111111",name:"OldProj",root:"/Users/tester/OldProj",created:"2026-01-01T00:00:00Z",last_seen:"2026-01-02T00:00:00Z"},
+    {id:"222222222222",name:"OldProj",root:"C:/Users/Tester/OldProj",created:"2026-01-03T00:00:00Z",last_seen:"2026-01-04T00:00:00Z"}
+  ]};
+  fs.writeFileSync(process.argv[1],JSON.stringify(reg))' "$H4/.claude/skills/_sinapsis-projects.json"
+add_run "$H4" "gggggggggggg" "Fresh" "/Users/tester/Fresh"
+R4=$(reg "$H4")
+NM=$(echo "$R4" | field "r.projects.filter(p=>p&&p.name==='OldProj').length")
+[ "$NM" = "1" ] && pass "Pre-existing cross-OS duplicates merged into one entry" \
+  || fail "Expected 1 OldProj entry, got '$NM'"
+MR=$(echo "$R4" | field "(function(){const p=r.projects.find(p=>p&&p.name==='OldProj');if(!p)return 'missing';
+  return (p.roots&&p.roots.posix==='/Users/tester/OldProj'&&p.roots.windows==='C:/Users/Tester/OldProj'
+    &&(p.aliases||[]).includes('222222222222')
+    &&p.created==='2026-01-01T00:00:00Z'&&p.last_seen==='2026-01-04T00:00:00Z')?'yes':'no'})()")
+[ "$MR" = "yes" ] && pass "Merged entry: union roots+aliases, oldest created, newest last_seen" \
+  || fail "merged entry wrong ($MR): $(echo "$R4" | field 'JSON.stringify(r.projects)')"
+
+# ── Test 9: Git Bash /c/... roots classify as the windows family ──
+# observe_v3.py normally emits C:/... cwds, but a Git Bash shell can produce /c/...;
+# osFamily() handles that branch, so cover it: a /c/ sighting must merge with the
+# posix entry (families differ) and land under roots.windows.
+echo "--- Git Bash /c/ path branch ---"
+H5=$(newhome)
+add_run "$H5" "hhhhhhhhhhhh" "GBProj" "/Users/tester/GBProj"
+add_run "$H5" "iiiiiiiiiiii" "GBProj" "/c/Users/Tester/GBProj"
+R5=$(reg "$H5")
+N5=$(echo "$R5" | field "r.projects.length")
+GB=$(echo "$R5" | field "(r.projects[0]&&r.projects[0].roots&&r.projects[0].roots.windows==='/c/Users/Tester/GBProj')?'yes':'no'")
+if [ "$N5" = "1" ] && [ "$GB" = "yes" ]; then
+  pass "Git Bash /c/ root classified as windows family and merged cross-OS"
+else
+  fail "expected 1 entry with roots.windows=/c/Users/Tester/GBProj, got n=$N5 gb=$GB"
+fi
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

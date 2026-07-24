@@ -222,9 +222,32 @@ try {
         ? "remote:" + projectRemote.trim().toLowerCase()
         : "name:" + (projectName || "").toLowerCase();
 
+      // Known asymmetry (documented, not handled): remote detection can fail on ONE
+      // machine (git not on PATH for execFileSync) — that sighting falls back to a
+      // "name:" crossKey and will not match the "remote:" entry, so a duplicate
+      // persists until a session on that machine sees the remote again (the key
+      // upgrade below then lets the migration pass heal it).
+      function findByCrossKey() {
+        if (crossKey.startsWith("remote:")) {
+          // Same remote = same project, whatever the OS. (Distinct ids with an equal
+          // lowercased remote can only come from remote-string case differences.)
+          return registry.projects.find(p => p && p.crossKey === crossKey);
+        }
+        // "name:" fallback — ONLY for the genuine cross-OS scenario. A bare name match
+        // would collapse two different projects that share a folder name on the SAME
+        // machine (~/work/app vs ~/personal/app), and a false merge corrupts the
+        // registry where a duplicate is merely cosmetic. Accept the match only when
+        // the OS families differ AND the entry has no root of our family recorded.
+        if (crossKey === "name:" || !projectRoot) return null;
+        const fam = osFamily(projectRoot);
+        return registry.projects.find(p => p && p.crossKey === crossKey && p.root
+          && osFamily(p.root) !== fam
+          && !(p.roots && p.roots[fam]));
+      }
+
       let entry = registry.projects.find(p => p && p.id === projectHash)
         || registry.projects.find(p => p && Array.isArray(p.aliases) && p.aliases.includes(projectHash))
-        || (crossKey !== "name:" ? registry.projects.find(p => p && p.crossKey === crossKey) : null);
+        || findByCrossKey();
 
       if (!entry) {
         entry = { id: projectHash, crossKey: crossKey, name: projectName, root: projectRoot,
@@ -246,6 +269,56 @@ try {
         entry.crossKey = crossKey;
       }
       entry.last_seen = now;
+
+      // Migration pass: cure PRE-EXISTING duplicates (the synced-registry symptom this
+      // feature targets). The lookup above only prevents future duplicates on a clean
+      // registry; two entries already both present (each machine updating its own via
+      // id-match) would otherwise persist forever. Merge pairs under the SAME guard as
+      // the lookup: "remote:" keys merge freely, "name:" keys only across OS families.
+      // Union aliases/roots, oldest created, newest last_seen (whose root also wins as
+      // the most-recently-seen path). crossKey is backfilled for legacy entries so
+      // registries written before this feature are cured too. O(n²) over tens of
+      // entries — negligible on a Stop hook.
+      {
+        const keyOf = p => p.crossKey ||
+          (p.remote && p.remote.trim() ? "remote:" + p.remote.trim().toLowerCase()
+                                       : "name:" + (p.name || "").toLowerCase());
+        const kept = [];
+        for (const p of registry.projects) {
+          if (!p) continue;
+          p.crossKey = keyOf(p);
+          const famP = p.root ? osFamily(p.root) : null;
+          const target = kept.find(k => {
+            if (k.crossKey !== p.crossKey) return false;
+            if (k.crossKey.startsWith("remote:")) return true;
+            if (k.crossKey === "name:" || !k.root || !famP) return false;
+            const pRootFam = (p.roots && p.roots[famP]) || p.root;
+            return osFamily(k.root) !== famP
+              && !(k.roots && k.roots[famP] && k.roots[famP] !== pRootFam);
+          });
+          if (!target) { kept.push(p); continue; }
+          const ids = new Set([...(target.aliases || []), ...(p.aliases || []), p.id].filter(Boolean));
+          ids.delete(target.id);
+          target.aliases = Array.from(ids);
+          if (!target.roots || typeof target.roots !== "object") target.roots = {};
+          // Legacy entries (pre-feature) carry root but no roots map — backfill so the
+          // union below actually records both families.
+          if (target.root) {
+            const famT = osFamily(target.root);
+            if (!target.roots[famT]) target.roots[famT] = target.root;
+          }
+          const pRoots = (p.roots && typeof p.roots === "object") ? p.roots : {};
+          if (p.root && famP && !pRoots[famP]) pRoots[famP] = p.root;
+          for (const f of Object.keys(pRoots)) if (!target.roots[f]) target.roots[f] = pRoots[f];
+          if (!target.remote && p.remote) target.remote = p.remote;
+          if (p.created && (!target.created || p.created < target.created)) target.created = p.created;
+          if (p.last_seen && (!target.last_seen || p.last_seen > target.last_seen)) {
+            target.last_seen = p.last_seen;
+            if (p.root) target.root = p.root;
+          }
+        }
+        registry.projects = kept;
+      }
 
       // Atomic write: tmp + rename (still needed for crash safety)
       const tmpPath = registryPath + ".tmp." + process.pid;
