@@ -2,7 +2,8 @@
 """Sinapsis Observer v3 - Single-invocation Python script.
 Appends one JSONL observation per tool use to homunculus/projects/{hash}/observations.jsonl
 Scrubs secrets from input/output before writing.
-Sets is_error=True when output contains error keywords (used by session-learner)."""
+Sets is_error=True only on structural harness failures or hard failure markers
+in execution (Bash) output — never on keywords inside read file content (v4.8.1)."""
 
 import json, sys, os, re, hashlib, stat
 try:
@@ -140,22 +141,57 @@ def main():
         observation["output"] = scrub(output_str)
         # Also capture input for tool_complete (enables full context analysis)
         observation["input"] = scrub(input_str)
-        # Flag errors — session-learner uses this to detect error→resolution patterns
-        # Use word boundaries to avoid false positives like "0 errors found"
-        error_patterns = [
-            r"\berror[:\s]", r"\bfailed\b", r"\bexception\b",
-            r"\btraceback\b", r"\berrno\b", r"\bEPERM\b", r"\bENOENT\b",
-            r"exit code [1-9]", r"command not found",
-        ]
-        output_lower = output_str.lower()
-        if any(re.search(pat, output_lower) for pat in error_patterns):
-            observation["is_error"] = True
-            # Extract first error line for downstream analysis
-            for line in output_str.split('\n'):
-                line_lower = line.strip().lower()
-                if any(re.search(pat, line_lower) for pat in error_patterns):
-                    observation["err_msg"] = scrub(line.strip()[:500])
+        # Flag errors — session-learner uses this to detect error→resolution patterns.
+        # v4.8.1 fix: substring matching on the whole output flagged successful Reads
+        # whose CONTENT mentioned "error" (e.g. source code with `throw new Error`).
+        # Now: (a) structural error signals from the harness for every tool,
+        # (b) hard failure markers only for execution tools (Bash), whose output is
+        # a run result, not arbitrary file content.
+        is_error = False
+        err_line = ""
+
+        # (a) Structural: harness-reported failure shapes (any tool)
+        if isinstance(tool_output, dict) and (
+            tool_output.get("is_error") or tool_output.get("error")
+        ):
+            is_error = True
+            err_line = str(tool_output.get("error") or tool_output.get("is_error"))[:500]
+        elif "tool_use_error" in output_str:
+            is_error = True
+        elif re.match(r'^\s*"?(Error|InputValidationError)\b', output_str):
+            # Failed calls return an error string; successful content tools return
+            # JSON like {"type": "text", "file": ...} — start-of-output only.
+            is_error = True
+
+        # (b) Hard markers for execution output (Bash) — never for content-bearing
+        # tools (Read/Grep/Glob/WebFetch/...), whose output is data, not a verdict.
+        if not is_error and tool_name == "Bash":
+            hard_markers = [
+                r"Permission denied", r"command not found", r"No such file or directory",
+                r"Traceback \(most recent call last\)", r"\bfatal: ", r"npm ERR!",
+                r"\bEPERM\b", r"\bENOENT\b", r"\bEACCES\b", r"UnicodeEncodeError",
+                r"exit code [1-9]", r"syntax error", r"was blocked",
+            ]
+            for pat in hard_markers:
+                if re.search(pat, output_str):
+                    is_error = True
                     break
+
+        if is_error:
+            observation["is_error"] = True
+            if not err_line:
+                # Extract first line carrying a failure marker (best effort)
+                fail_re = re.compile(
+                    r"(tool_use_error|Permission denied|command not found|No such file"
+                    r"|Traceback|fatal: |npm ERR!|EPERM|ENOENT|EACCES|UnicodeEncodeError"
+                    r"|exit code [1-9]|syntax error|was blocked|^\s*\"?Error)"
+                )
+                for line in output_str.split('\n'):
+                    if fail_re.search(line):
+                        err_line = line.strip()[:500]
+                        break
+            if err_line:
+                observation["err_msg"] = scrub(err_line)
 
     obs_file = os.path.join(project_dir, "observations.jsonl")
 
