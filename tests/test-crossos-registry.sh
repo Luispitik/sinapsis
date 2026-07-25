@@ -43,6 +43,10 @@ obs() {
 # newhome — hermetic HOME with the dirs the learner expects; .last-learn is old.
 newhome() {
   local h; h=$(mktemp -d)
+  # MSYS path conversion is disabled for this suite (see top of file), so node — a native
+  # Windows binary under Git Bash — resolves a posix "/tmp/..." to "C:\tmp\..." and every
+  # fixture write dies with ENOENT. Hand it a path it can actually open.
+  h=$(cd "$h" && { pwd -W 2>/dev/null || pwd; })
   mkdir -p "$h/.claude/skills" "$h/.claude/homunculus/projects"
   echo "old" > "$h/.claude/homunculus/.last-learn"
   echo "$h"
@@ -175,6 +179,44 @@ if [ "$N5" = "1" ] && [ "$GB" = "yes" ]; then
 else
   fail "expected 1 entry with roots.windows=/c/Users/Tester/GBProj, got n=$N5 gb=$GB"
 fi
+
+# ── Tests 11-12: a name-key fusion is ACCEPTED but never silent ──
+# Two UNRELATED projects that merely share a folder name, seen from different OS
+# families with no remote, still merge — nothing is left to tell them apart. That is
+# the accepted limit of the "name:" fallback. What must NOT happen is that it merges
+# quietly: the entry carries name_merged + the offending root pair, so a wrong fusion
+# is auditable and reversible by hand.
+echo ""
+echo "--- Name-key fusion is stamped, not silent ---"
+H6=$(newhome)
+add_run "$H6" "jjjjjjjjjjjj" "app" "C:/work/app"
+add_run "$H6" "kkkkkkkkkkkk" "app" "/home/other/personal/app"
+R6=$(reg "$H6")
+
+STAMP=$(echo "$R6" | field "(r.projects[0]&&r.projects[0].name_merged===true)?'yes':'no'")
+[ "$STAMP" = "yes" ] && pass "Cross-family name fusion stamped with name_merged" \
+  || fail "name_merged missing: $(echo "$R6" | field 'JSON.stringify(r.projects[0]||{})')"
+
+LOG=$(echo "$R6" | field "(r.projects[0]&&(r.projects[0].name_merge_log||[]).some(s=>s.indexOf('C:/work/app')>=0&&s.indexOf('/home/other/personal/app')>=0))?'yes':'no'")
+[ "$LOG" = "yes" ] && pass "Both roots recorded in name_merge_log for audit" \
+  || fail "name_merge_log incomplete: $(echo "$R6" | field 'JSON.stringify((r.projects[0]||{}).name_merge_log)')"
+
+# ── Test 13: a legitimate remote-keyed merge is NOT stamped (no false alarm) ──
+echo ""
+echo "--- Remote-keyed merge stays unstamped ---"
+H7=$(newhome)
+mkdir -p "$H7/.claude/homunculus/projects/llllllllllll"
+obs "${TODAY}10:00:00Z" Edit "RemoteProj" "/Users/tester/RemoteProj" > "$H7/.claude/homunculus/projects/llllllllllll/observations.jsonl"
+obs "${TODAY}10:01:00Z" Bash "RemoteProj" "/Users/tester/RemoteProj" >> "$H7/.claude/homunculus/projects/llllllllllll/observations.jsonl"
+obs "${TODAY}10:02:00Z" Read "RemoteProj" "/Users/tester/RemoteProj" >> "$H7/.claude/homunculus/projects/llllllllllll/observations.jsonl"
+node -e 'const fs=require("fs");const f=process.argv[1];let o={};try{o=JSON.parse(fs.readFileSync(f,"utf8"))}catch(e){}
+  o["llllllllllll"]={name:"RemoteProj",root:"/Users/tester/RemoteProj",remote:"https://example.com/x/remoteproj.git"};
+  fs.writeFileSync(f,JSON.stringify(o))' "$H7/.claude/homunculus/projects.json"
+HOME="$H7" bash "$LEARNER" >/dev/null 2>&1
+R7=$(reg "$H7")
+UNSTAMPED=$(echo "$R7" | field "(r.projects[0]&&!r.projects[0].name_merged)?'yes':'no'")
+[ "$UNSTAMPED" = "yes" ] && pass "Remote-keyed entry carries no name_merged stamp" \
+  || fail "remote-keyed entry wrongly stamped: $(echo "$R7" | field 'JSON.stringify(r.projects[0]||{})')"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

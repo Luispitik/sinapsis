@@ -214,10 +214,35 @@ try {
       // each machine — two entries for one project when the registry is shared (e.g. via
       // a synced folder). We match on a cross-OS-stable key (the remote when present, else
       // the project name), register every per-OS id as an alias, and record each OS root.
+      // Only two families are distinguished: "windows" and "posix". macOS and Linux both
+      // classify as posix, so a no-remote project seen from a Mac and from a Linux box is
+      // NOT de-duplicated (the name-key merge below requires the families to differ). That
+      // is deliberate: it keeps the same-machine guard cheap. Windows<->posix, the case
+      // this feature targets, is covered.
       function osFamily(p) {
         // Windows: "C:\\", "C:/" or Git-Bash "/c/"; everything else (Linux, macOS) is posix.
         return (/^[a-zA-Z]:[\\/]/.test(p) || /^\/[a-zA-Z]\//.test(p)) ? "windows" : "posix";
       }
+      // Stamp + log a name-key fusion. Only reached for cross-OS-family matches with no
+      // remote, i.e. exactly the case that can be wrong. Keeps the last few pairs so a
+      // bad fusion is auditable after the fact.
+      function noteNameMerge(entry, rootA, rootB) {
+        entry.name_merged = true;
+        if (!Array.isArray(entry.name_merge_log)) entry.name_merge_log = [];
+        const pair = [rootA, rootB].filter(Boolean).sort().join(" <> ");
+        if (pair && !entry.name_merge_log.includes(pair)) {
+          entry.name_merge_log.push(pair);
+          if (entry.name_merge_log.length > 5) entry.name_merge_log.shift();
+          // NOT stderr: the whole node block is invoked with 2>/dev/null, so anything
+          // written there is discarded. The log file is the only channel that survives.
+          // No literal single-quote in this block — it would close the bash -e string.
+          try {
+            fs.appendFileSync(logFile, now + " | registry: merged [" + entry.name
+              + "] by NAME across OS families (no remote to verify) | " + pair + "\n");
+          } catch (e) {}
+        }
+      }
+
       const crossKey = (projectRemote && projectRemote.trim())
         ? "remote:" + projectRemote.trim().toLowerCase()
         : "name:" + (projectName || "").toLowerCase();
@@ -238,11 +263,20 @@ try {
         // machine (~/work/app vs ~/personal/app), and a false merge corrupts the
         // registry where a duplicate is merely cosmetic. Accept the match only when
         // the OS families differ AND the entry has no root of our family recorded.
+        //
+        // Residual risk, accepted and made visible rather than guarded away: two
+        // UNRELATED projects that merely share a folder name ("app", "api", "docs")
+        // on machines of different OS families still merge — with no remote there is
+        // nothing left to tell them apart. Every such merge is stamped on the entry
+        // (name_merged) and logged, so a wrong fusion is a visible event that can be
+        // undone by hand instead of silent registry drift.
         if (crossKey === "name:" || !projectRoot) return null;
         const fam = osFamily(projectRoot);
-        return registry.projects.find(p => p && p.crossKey === crossKey && p.root
+        const hit = registry.projects.find(p => p && p.crossKey === crossKey && p.root
           && osFamily(p.root) !== fam
           && !(p.roots && p.roots[fam]));
+        if (hit) noteNameMerge(hit, projectRoot, hit.root);
+        return hit;
       }
 
       let entry = registry.projects.find(p => p && p.id === projectHash)
@@ -297,6 +331,11 @@ try {
               && !(k.roots && k.roots[famP] && k.roots[famP] !== pRootFam);
           });
           if (!target) { kept.push(p); continue; }
+          // Same accepted-but-visible rule as the lookup path: a fusion that rests on
+          // the folder name alone gets stamped and logged.
+          if (target.crossKey && target.crossKey.startsWith("name:")) {
+            noteNameMerge(target, p.root, target.root);
+          }
           const ids = new Set([...(target.aliases || []), ...(p.aliases || []), p.id].filter(Boolean));
           ids.delete(target.id);
           target.aliases = Array.from(ids);
