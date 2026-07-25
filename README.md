@@ -1,7 +1,7 @@
-# Sinapsis v4.8
+# Sinapsis v4.9
 
-[![Version](https://img.shields.io/badge/version-4.8.1-blue.svg)](https://github.com/Luispitik/sinapsis)
-[![Tests](https://img.shields.io/badge/tests-112%20passing-green.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-4.9.0-blue.svg)](https://github.com/Luispitik/sinapsis)
+[![Tests](https://img.shields.io/badge/tests-217%20passing-green.svg)](tests/)
 [![CI](https://github.com/Luispitik/sinapsis/actions/workflows/tests.yml/badge.svg)](https://github.com/Luispitik/sinapsis/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -27,6 +27,14 @@ Every time you start a new session, Claude starts from zero. Your preferences, y
 Think of it as going from a dumb terminal to an assistant that actually knows you.
 
 ---
+
+## What's New in v4.9.0 — Cleaner signal, one project per project
+
+**The learner stopped inventing work.** `observe_v3.py` used to flag a tool call as failed whenever its output contained the word `error` — including the *content of files it had just read successfully*. A `Read` of source code with `throw new Error` looked exactly like a crash. One real session produced 190 proposals of which 189 were noise. Detection is now structural (harness-reported failure shapes), plus hard failure markers over execution output, plus a shape-and-length check for other tools, so a genuine `Edit`/`Read` failure is caught while a payload that merely *mentions* an error is not. On a real 8,000-observation window, flagged observations dropped from 1,074 to 22. Thanks to [@juanparisma](https://github.com/juanparisma) (#29).
+
+**One project, one entry.** A project with no git remote used to get a different id on every machine, because the id derives from its root and roots differ by OS. On a shared registry it showed up twice, forever. Entries now carry a cross-OS-stable key, keep every per-OS id as an alias, and record both roots — and a migration pass heals registries that already drifted. Where the match rests on the folder name alone it can still be wrong, so it stamps itself and logs, instead of merging quietly. Thanks to [@Sergio-LPA](https://github.com/Sergio-LPA) (#22).
+
+**Secret scrubbing is actually tested now.** The assertions that were supposed to prove it had been silently reporting SKIP since they were written — they tried to import a script that cannot be imported, then looked for a function that does not exist. They now drive the real hook with a real secret and check what reached disk.
 
 ## What's New in v4.8.0 — Plexus moves to the team edition
 

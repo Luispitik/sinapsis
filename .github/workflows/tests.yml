@@ -67,6 +67,10 @@ jobs:
         shell: bash
         run: bash tests/test-crossos-registry.sh
 
+      - name: Run error detection tests
+        shell: bash
+        run: bash tests/test-error-detection.sh
+
       - name: Run v4.5 Opus 4.7 tests
         shell: bash
         run: bash tests/test-v45-opus47.sh

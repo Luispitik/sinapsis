@@ -163,16 +163,37 @@ def main():
             # JSON like {"type": "text", "file": ...} — start-of-output only.
             is_error = True
 
-        # (b) Hard markers for execution output (Bash) — never for content-bearing
-        # tools (Read/Grep/Glob/WebFetch/...), whose output is data, not a verdict.
-        if not is_error and tool_name == "Bash":
-            hard_markers = [
-                r"Permission denied", r"command not found", r"No such file or directory",
-                r"Traceback \(most recent call last\)", r"\bfatal: ", r"npm ERR!",
-                r"\bEPERM\b", r"\bENOENT\b", r"\bEACCES\b", r"UnicodeEncodeError",
-                r"exit code [1-9]", r"syntax error", r"was blocked",
-            ]
+        # (b) Hard markers for execution output (Bash/PowerShell) — never scanned over
+        # content-bearing tools at full length, whose output is data, not a verdict.
+        hard_markers = [
+            r"Permission denied", r"command not found", r"No such file or directory",
+            r"Traceback \(most recent call last\)", r"\bfatal: ", r"npm ERR!",
+            r"\bEPERM\b", r"\bENOENT\b", r"\bEACCES\b", r"UnicodeEncodeError",
+            r"exit code [1-9]", r"syntax error", r"was blocked",
+        ]
+        if not is_error and tool_name in ("Bash", "PowerShell"):
             for pat in hard_markers:
+                if re.search(pat, output_str):
+                    is_error = True
+                    break
+
+        # (c) v4.9.0: closes the gap where a genuine Edit/Read failure was flagged by
+        # nobody — (a) only catches harness-shaped errors and (b) is execution-only.
+        #
+        # What separates a failure from a success here is SHAPE, not wording. A non-Bash
+        # tool that fails returns a bare verdict string ("File does not exist.", "Error:
+        # String to replace not found"); one that succeeds returns a payload, which
+        # json.dumps renders starting with { or [. Scanning a payload for marker words is
+        # precisely the bug this whole fix exists to kill — a Read of source code that
+        # mentions EPERM is not an EPERM. So: bare strings only, and short enough to be a
+        # verdict rather than prose.
+        stripped = output_str.lstrip()
+        looks_like_payload = stripped.startswith("{") or stripped.startswith("[")
+        if (not is_error and tool_name not in ("Bash", "PowerShell")
+                and not looks_like_payload and len(output_str) < 500):
+            for pat in hard_markers + [r"String to replace not found",
+                                       r"File does not exist",
+                                       r"has not been read yet"]:
                 if re.search(pat, output_str):
                     is_error = True
                     break

@@ -15,6 +15,13 @@ if [ "${SINAPSIS_DEBUG:-}" = "1" ]; then
   exec 2>>"$HOME/.claude/skills/_sinapsis-debug.log"
 fi
 
+# v4.9.0: the node block below used to end in 2>/dev/null, which discarded every
+# diagnostic it emits — lock contention on the registry, failed upserts, and the
+# SINAPSIS_DEBUG redirect above, which the node invocation silently overrode. Those
+# messages had never reached a human. They now append to the learner log. The directory
+# is created here because the hook can fire before any installer has run.
+mkdir -p "$HOME/.claude/skills" 2>/dev/null || true
+
 INDEX_FILE="$HOME/.claude/skills/_instincts-index.json"
 PROPOSALS_FILE="$HOME/.claude/skills/_instinct-proposals.json"
 LOG_FILE="$HOME/.claude/skills/_session-learner.log"
@@ -61,7 +68,7 @@ if (lines.length < 3) process.exit(0);
 // v4.8.1: validate is_error against hard failure markers. Observations written by
 // observers < v4.8.1 flagged is_error on any output whose CONTENT mentioned "error"
 // (e.g. a successful Read of source code). Do not trust the flag alone.
-const HARD_ERR_RE = /(tool_use_error|Permission denied|command not found|No such file or directory|InputValidationError|String to replace not found|Traceback \(most recent call last\)|fatal: |npm ERR!|\bEPERM\b|\bENOENT\b|\bEACCES\b|UnicodeEncodeError|exit code [1-9]|syntax error|was blocked|Web search error)/;
+const HARD_ERR_RE = /(tool_use_error|Permission denied|command not found|No such file or directory|InputValidationError|String to replace not found|File does not exist|has not been read yet|Traceback \(most recent call last\)|fatal: |npm ERR!|\bEPERM\b|\bENOENT\b|\bEACCES\b|UnicodeEncodeError|exit code [1-9]|syntax error|was blocked|Web search error)/;
 function isRealError(l) {
   if (!l || !l.is_error) return false;
   return HARD_ERR_RE.test((l.err_msg || "") + "\n" + (l.output || "").slice(0, 600));
@@ -613,6 +620,6 @@ if (found.length > 0) {
     "\nRevisa con /analyze-session.";
   console.log(JSON.stringify({ systemMessage: msg }));
 }
-' "$OBS_FILE" "$INDEX_FILE" "$PROPOSALS_FILE" "$LOG_FILE" 2>/dev/null
+' "$OBS_FILE" "$INDEX_FILE" "$PROPOSALS_FILE" "$LOG_FILE" 2>>"$LOG_FILE"
 
 exit 0
