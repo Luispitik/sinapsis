@@ -63,6 +63,10 @@ jobs:
         shell: bash
         run: bash tests/test-registry-isolation.sh
 
+      - name: Run cross-OS registry tests
+        shell: bash
+        run: bash tests/test-crossos-registry.sh
+
       - name: Run v4.5 Opus 4.7 tests
         shell: bash
         run: bash tests/test-v45-opus47.sh

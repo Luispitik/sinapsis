@@ -208,15 +208,155 @@ try {
       }
       if (!Array.isArray(registry.projects)) registry.projects = [];
 
-      let entry = registry.projects.find(p => p && p.id === projectHash);
+      // Cross-OS de-dup: the project id is sha256(remote || root); for a project with
+      // no git remote the id is derived from the root, which differs per OS
+      // (/Users/me/Proj vs C:/Users/Me/Proj), so the SAME project gets a different id on
+      // each machine — two entries for one project when the registry is shared (e.g. via
+      // a synced folder). We match on a cross-OS-stable key (the remote when present, else
+      // the project name), register every per-OS id as an alias, and record each OS root.
+      // Only two families are distinguished: "windows" and "posix". macOS and Linux both
+      // classify as posix, so a no-remote project seen from a Mac and from a Linux box is
+      // NOT de-duplicated (the name-key merge below requires the families to differ). That
+      // is deliberate: it keeps the same-machine guard cheap. Windows<->posix, the case
+      // this feature targets, is covered.
+      function osFamily(p) {
+        // Windows: "C:\\", "C:/" or Git-Bash "/c/"; everything else (Linux, macOS) is posix.
+        return (/^[a-zA-Z]:[\\/]/.test(p) || /^\/[a-zA-Z]\//.test(p)) ? "windows" : "posix";
+      }
+      // Stamp + log a name-key fusion. Only reached for cross-OS-family matches with no
+      // remote, i.e. exactly the case that can be wrong. Keeps the last few pairs so a
+      // bad fusion is auditable after the fact.
+      function noteNameMerge(entry, rootA, rootB) {
+        entry.name_merged = true;
+        if (!Array.isArray(entry.name_merge_log)) entry.name_merge_log = [];
+        const pair = [rootA, rootB].filter(Boolean).sort().join(" <> ");
+        if (pair && !entry.name_merge_log.includes(pair)) {
+          entry.name_merge_log.push(pair);
+          if (entry.name_merge_log.length > 5) entry.name_merge_log.shift();
+          // NOT stderr: the whole node block is invoked with 2>/dev/null, so anything
+          // written there is discarded. The log file is the only channel that survives.
+          // No literal single-quote in this block — it would close the bash -e string.
+          try {
+            fs.appendFileSync(logFile, now + " | registry: merged [" + entry.name
+              + "] by NAME across OS families (no remote to verify) | " + pair + "\n");
+          } catch (e) {}
+        }
+      }
+
+      const crossKey = (projectRemote && projectRemote.trim())
+        ? "remote:" + projectRemote.trim().toLowerCase()
+        : "name:" + (projectName || "").toLowerCase();
+
+      // Known asymmetry (documented, not handled): remote detection can fail on ONE
+      // machine (git not on PATH for execFileSync) — that sighting falls back to a
+      // "name:" crossKey and will not match the "remote:" entry, so a duplicate
+      // persists until a session on that machine sees the remote again (the key
+      // upgrade below then lets the migration pass heal it).
+      function findByCrossKey() {
+        if (crossKey.startsWith("remote:")) {
+          // Same remote = same project, whatever the OS. (Distinct ids with an equal
+          // lowercased remote can only come from remote-string case differences.)
+          return registry.projects.find(p => p && p.crossKey === crossKey);
+        }
+        // "name:" fallback — ONLY for the genuine cross-OS scenario. A bare name match
+        // would collapse two different projects that share a folder name on the SAME
+        // machine (~/work/app vs ~/personal/app), and a false merge corrupts the
+        // registry where a duplicate is merely cosmetic. Accept the match only when
+        // the OS families differ AND the entry has no root of our family recorded.
+        //
+        // Residual risk, accepted and made visible rather than guarded away: two
+        // UNRELATED projects that merely share a folder name ("app", "api", "docs")
+        // on machines of different OS families still merge — with no remote there is
+        // nothing left to tell them apart. Every such merge is stamped on the entry
+        // (name_merged) and logged, so a wrong fusion is a visible event that can be
+        // undone by hand instead of silent registry drift.
+        if (crossKey === "name:" || !projectRoot) return null;
+        const fam = osFamily(projectRoot);
+        const hit = registry.projects.find(p => p && p.crossKey === crossKey && p.root
+          && osFamily(p.root) !== fam
+          && !(p.roots && p.roots[fam]));
+        if (hit) noteNameMerge(hit, projectRoot, hit.root);
+        return hit;
+      }
+
+      let entry = registry.projects.find(p => p && p.id === projectHash)
+        || registry.projects.find(p => p && Array.isArray(p.aliases) && p.aliases.includes(projectHash))
+        || findByCrossKey();
+
       if (!entry) {
-        entry = { id: projectHash, name: projectName, root: projectRoot, remote: projectRemote, created: now, last_seen: now };
+        entry = { id: projectHash, crossKey: crossKey, name: projectName, root: projectRoot,
+                  roots: {}, remote: projectRemote, aliases: [], created: now, last_seen: now };
         registry.projects.push(entry);
-      } else {
-        if (projectName && projectName !== projectHash) entry.name = projectName;
-        if (projectRoot) entry.root = projectRoot;
-        if (projectRemote) entry.remote = projectRemote;
-        entry.last_seen = now;
+      }
+      if (!Array.isArray(entry.aliases)) entry.aliases = [];
+      if (entry.id !== projectHash && !entry.aliases.includes(projectHash)) entry.aliases.push(projectHash);
+      if (projectName && projectName !== projectHash) entry.name = projectName;
+      if (projectRoot) {
+        entry.root = projectRoot;                       // most-recently-seen OS path
+        if (!entry.roots || typeof entry.roots !== "object") entry.roots = {};
+        entry.roots[osFamily(projectRoot)] = projectRoot;  // { posix, windows }
+      }
+      if (projectRemote) {
+        entry.remote = projectRemote;
+        entry.crossKey = "remote:" + projectRemote.trim().toLowerCase();  // upgrade key if a remote appears later
+      } else if (!entry.crossKey) {
+        entry.crossKey = crossKey;
+      }
+      entry.last_seen = now;
+
+      // Migration pass: cure PRE-EXISTING duplicates (the synced-registry symptom this
+      // feature targets). The lookup above only prevents future duplicates on a clean
+      // registry; two entries already both present (each machine updating its own via
+      // id-match) would otherwise persist forever. Merge pairs under the SAME guard as
+      // the lookup: "remote:" keys merge freely, "name:" keys only across OS families.
+      // Union aliases/roots, oldest created, newest last_seen (whose root also wins as
+      // the most-recently-seen path). crossKey is backfilled for legacy entries so
+      // registries written before this feature are cured too. O(n²) over tens of
+      // entries — negligible on a Stop hook.
+      {
+        const keyOf = p => p.crossKey ||
+          (p.remote && p.remote.trim() ? "remote:" + p.remote.trim().toLowerCase()
+                                       : "name:" + (p.name || "").toLowerCase());
+        const kept = [];
+        for (const p of registry.projects) {
+          if (!p) continue;
+          p.crossKey = keyOf(p);
+          const famP = p.root ? osFamily(p.root) : null;
+          const target = kept.find(k => {
+            if (k.crossKey !== p.crossKey) return false;
+            if (k.crossKey.startsWith("remote:")) return true;
+            if (k.crossKey === "name:" || !k.root || !famP) return false;
+            const pRootFam = (p.roots && p.roots[famP]) || p.root;
+            return osFamily(k.root) !== famP
+              && !(k.roots && k.roots[famP] && k.roots[famP] !== pRootFam);
+          });
+          if (!target) { kept.push(p); continue; }
+          // Same accepted-but-visible rule as the lookup path: a fusion that rests on
+          // the folder name alone gets stamped and logged.
+          if (target.crossKey && target.crossKey.startsWith("name:")) {
+            noteNameMerge(target, p.root, target.root);
+          }
+          const ids = new Set([...(target.aliases || []), ...(p.aliases || []), p.id].filter(Boolean));
+          ids.delete(target.id);
+          target.aliases = Array.from(ids);
+          if (!target.roots || typeof target.roots !== "object") target.roots = {};
+          // Legacy entries (pre-feature) carry root but no roots map — backfill so the
+          // union below actually records both families.
+          if (target.root) {
+            const famT = osFamily(target.root);
+            if (!target.roots[famT]) target.roots[famT] = target.root;
+          }
+          const pRoots = (p.roots && typeof p.roots === "object") ? p.roots : {};
+          if (p.root && famP && !pRoots[famP]) pRoots[famP] = p.root;
+          for (const f of Object.keys(pRoots)) if (!target.roots[f]) target.roots[f] = pRoots[f];
+          if (!target.remote && p.remote) target.remote = p.remote;
+          if (p.created && (!target.created || p.created < target.created)) target.created = p.created;
+          if (p.last_seen && (!target.last_seen || p.last_seen > target.last_seen)) {
+            target.last_seen = p.last_seen;
+            if (p.root) target.root = p.root;
+          }
+        }
+        registry.projects = kept;
       }
 
       // Atomic write: tmp + rename (still needed for crash safety)

@@ -69,6 +69,13 @@ try {
   if (canonical && Array.isArray(canonical.projects)) {
     for (const p of canonical.projects) {
       if (p && p.id) registry[p.id] = { name: p.name, root: p.root };
+      // Cross-OS de-dup keeps every per-OS id in aliases[] — observations written
+      // under an aliased id must resolve to the same project name/root.
+      if (p && Array.isArray(p.aliases)) {
+        for (const a of p.aliases) {
+          if (a && !registry[a]) registry[a] = { name: p.name, root: p.root };
+        }
+      }
     }
   }
 } catch(e) {}

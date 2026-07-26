@@ -15,7 +15,7 @@ Run with `/projects` or "list my projects".
 
 1. Read `~/.claude/skills/_sinapsis-projects.json`
 2. Read `~/.claude/skills/_instincts-index.json` for per-project instinct counts
-3. Read `~/.claude/homunculus/projects/{hash}/observations.jsonl` for per-project observation counts
+3. Read `~/.claude/homunculus/projects/{hash}/observations.jsonl` for per-project observation counts — and, for entries with an `aliases` array (cross-OS de-dup keeps every per-OS id there), ALSO add the observations from each `~/.claude/homunculus/projects/{alias}/observations.jsonl` to the same project's count
 4. Display dashboard
 
 ---
