@@ -329,3 +329,15 @@ Deterministic regex rules — not probabilistic. Always fire when trigger matche
 | v4.3.1 | 2026-04-08 | Fersora audit: 22 bugs + 6 vulns fixed. Directory cleanup (-41% tokens) |
 | v4.3.2 | 2026-04-12 | GStack separation: focused on learning only. Repo renamed to Luispitik/sinapsis |
 | v4.3.3 | 2026-04-13 | Cortex comparison hardening: /downvote, 8 scrubbing patterns, path traversal, token cap, multi-session promote, 5 detectors, CI/CD, /backup, /restore, /cleanup |
+| v4.4.0 | 2026-04-16 | Observability dashboard: `/dashboard-sinapsis`, deterministic Python generator, 12 TDD tests |
+| v4.4.1 | 2026-04-17 | Learner quoting regression (every Stop event crashed); the project registry was never actually written |
+| v4.4.2 | 2026-04-18 | Dashboard crashed on the dict-shaped `_catalog.json` (reported by @fvayas, fixed by @NestorPVsf) |
+| v4.5.0 | 2026-04-21 | Opus 4.7: cache-stable instinct ordering, `PreCompact` hook, caps raised for the 1M window |
+| v4.5.1 | 2026-06-01 | `/eod` reported 0 projects for non-git folders; cross-OS gather robustness (reported by @NestorPVsf) |
+| v4.6.0 | 2026-06-01 | Opus 4.8 alignment: 8 instincts injected, 6k token budget, 8k-line observation window |
+| v4.6.1 | 2026-06-02 | Registry filename collision with skill-router — Sinapsis moves to `_sinapsis-projects.json` |
+| v4.6.2 | 2026-06-10 | A UTF-8 BOM silently disabled the whole pipeline (reported by @juanparisma); decay persistence; Store `python3` shim |
+| v4.7.0 | 2026-07-13 | Sinapsis Plexus: team knowledge over plain git (extracted again in v4.8.0) |
+| v4.8.0 | 2026-07-13 | Plexus extracted to the private team edition — back to individual autonomous learning |
+| v4.8.1 | 2026-07-17 | Installer hardening: hooks wired into an *existing* `settings.json`, legacy archived instead of deleted, Windows copy fixes |
+| v4.9.0 | 2026-07-27 | Cross-OS registry de-dup (@Sergio-LPA), learner false positives eliminated (@juanparisma), non-Bash error detection, secret scrubbing verified for the first time |
