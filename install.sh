@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#  Sinapsis v4.8 — Installer for macOS / Linux
+#  Sinapsis v4.9 — Installer for macOS / Linux
 #  Skills on Demand for Claude Code
 #  https://github.com/Luispitik/sinapsis
 # ============================================================
@@ -28,7 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo ""
 echo -e "${PURPLE}${BOLD}============================================================${NC}"
-echo -e "${PURPLE}${BOLD}  Sinapsis v4.8 — Skills on Demand for Claude Code${NC}"
+echo -e "${PURPLE}${BOLD}  Sinapsis v4.9 — Skills on Demand for Claude Code${NC}"
 echo -e "${PURPLE}${BOLD}  The system that learns and adapts to you${NC}"
 echo -e "${PURPLE}${BOLD}============================================================${NC}"
 echo ""
@@ -269,9 +269,9 @@ echo -e "${GREEN}  OK${NC} $cmd_count commands installed"
 echo ""
 echo -e "${GREEN}${BOLD}============================================================${NC}"
 if $UPGRADING; then
-    echo -e "${GREEN}${BOLD}  Sinapsis v4.8 upgrade complete!${NC}"
+    echo -e "${GREEN}${BOLD}  Sinapsis v4.9 upgrade complete!${NC}"
 else
-    echo -e "${GREEN}${BOLD}  Sinapsis v4.8 installed!${NC}"
+    echo -e "${GREEN}${BOLD}  Sinapsis v4.9 installed!${NC}"
 fi
 echo -e "${GREEN}${BOLD}============================================================${NC}"
 echo ""

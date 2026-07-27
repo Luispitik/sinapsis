@@ -23,7 +23,7 @@ Incluye 8 KPIs, velocity, timings por hora del día, maduración de instincts, h
 Run the Python script directly (not via LLM reasoning — es determinista):
 
 ```bash
-python C:/Users/luis/.claude/skills/norteia-continuous-learning/hooks/generate-dashboard.py
+python ~/.claude/skills/_generate-dashboard.py
 ```
 
 El script lee en paralelo:
@@ -42,21 +42,23 @@ Y escribe `~/.claude/skills/_dashboard.html` autocontenido (Chart.js + Google Fo
 Tras ejecutar el script, muestra al usuario:
 
 ```
-Dashboard regenerado: C:/Users/luis/.claude/skills/_dashboard.html
+Dashboard regenerado: ~/.claude/skills/_dashboard.html
 
 Acceso:
   · Preview server (si está arrancado): http://localhost:8080/_dashboard.html
-  · Directamente:                       file:///C:/Users/luis/.claude/skills/_dashboard.html
+  · Directamente:                       file://<HOME>/.claude/skills/_dashboard.html
 
 Próxima regeneración automática: diaria por sinapsis-linting
 ```
+
+Sustituye `<HOME>` por la ruta absoluta del home real del usuario — `file://` no expande `~`.
 
 Si el preview server de `.claude/launch.json` (name=`dashboard-static`) está activo, basta con navegar a la URL.
 Si no está activo, ofrece arrancarlo con `preview_start` del MCP Claude_Preview (solo si el usuario lo pide).
 
 ### Step 3: Handle errors
 
-- Si falla el Python con "template not found": el template está en `hooks/dashboard-template.html` — verificar que existe.
+- Si falla el Python con "template not found": el instalador deja el template en `~/.claude/skills/_dashboard-template.html` (origen: `core/_dashboard-template.html`) — verificar que existe.
 - Si falla por fichero JSON corrupto: el script ya gestiona `default` en `load_json`, seguirá con ceros.
 - Si no hay `_instinct.log`: el heatmap y hour-distribution estarán a cero, el resto del dashboard funciona.
 

@@ -68,7 +68,7 @@ C=$(run_gather "$H" | field "r.project_count")
 # ── TEST 3: Bug 2 — cross-OS basename on a Windows-style path ──
 echo "--- Test 3: Cross-OS basename (Windows \\ path) ---"
 H=$(newhome)
-gen_edit_obs "${TODAY}10:00:00Z" "WinProj" 'C:\Users\luis\app\page.tsx' > "$H/observations.jsonl"
+gen_edit_obs "${TODAY}10:00:00Z" "WinProj" 'C:\Users\tester\app\page.tsx' > "$H/observations.jsonl"
 F=$(run_gather "$H" | field "(r.projects.find(p=>p.name==='WinProj')||{}).files_touched.join(',')")
 [ "$F" = "page.tsx" ] && pass "Windows path split to 'page.tsx'" || fail "Expected 'page.tsx', got '$F'"
 
