@@ -55,6 +55,10 @@ jobs:
         shell: bash
         run: bash tests/test-eod-gather.sh
 
+      - name: Run inline regex flag tests
+        shell: bash
+        run: bash tests/test-inline-regex-flags.sh
+
       - name: Run install/upgrade tests
         shell: bash
         run: bash tests/test-install-upgrade.sh

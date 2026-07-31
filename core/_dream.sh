@@ -254,11 +254,23 @@ const triggerFindings = [];
 for (const inst of instincts) {
   if (!inst.trigger_pattern) continue;
 
-  // Check valid regex
+  // Check valid regex. "invalid_regex" on its own sends the reader hunting; the
+  // overwhelmingly common cause is an inline flag group like `(?i)`, which is
+  // Python/PCRE syntax that JavaScript rejects outright. Name that case, because
+  // it is the one the activators now auto-heal and the one worth cleaning at the
+  // source so the pattern reads honestly.
   try {
     new RegExp(inst.trigger_pattern, "i");
   } catch (e) {
-    triggerFindings.push({ type: "trigger_issue", id: inst.id, issue: "invalid_regex" });
+    const inlineFlags = /\(\?[imsxu]+\)/.test(inst.trigger_pattern);
+    triggerFindings.push({
+      type: "trigger_issue",
+      id: inst.id,
+      issue: inlineFlags ? "inline_flag_group" : "invalid_regex",
+      detail: inlineFlags
+        ? "`(?i)`-style inline flags are not valid in JavaScript; the activators strip them, but the pattern should drop them too"
+        : e.message
+    });
     continue;
   }
 
@@ -417,10 +429,10 @@ lines.push("## Module 4: Trigger Validation");
 if (triggerFindings.length === 0) {
   lines.push("All trigger patterns are valid.");
 } else {
-  lines.push("| ID | Issue |");
-  lines.push("|----|-------|");
+  lines.push("| ID | Issue | Detail |");
+  lines.push("|----|-------|--------|");
   for (const f of triggerFindings) {
-    lines.push("| " + f.id + " | " + f.issue + " |");
+    lines.push("| " + f.id + " | " + f.issue + " | " + (f.detail || "") + " |");
   }
 }
 lines.push("");
