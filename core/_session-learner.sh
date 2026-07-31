@@ -77,7 +77,20 @@ function isRealError(l) {
 // ── JOB 1: Write project context.md (ALWAYS — not just when proposals exist) ──
 const projectDir = path.dirname(obsFile);
 const projectHash = path.basename(projectDir);
-const today = new Date().toISOString().slice(0, 10);
+// The operator'"'"'s day is the LOCAL one. toISOString() yields the UTC date, which
+// west of Greenwich flips mid-evening: from 19:00 local in UTC-5 every date
+// written here belonged to tomorrow. That surfaced as "Última sesión:
+// <tomorrow>" in context.md, and it also cut the proposals bucket in two —
+// evening work started a fresh session_date instead of continuing the day.
+const pad = n => String(n).padStart(2, "0");
+const localDay = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+// Stored timestamps are full UTC instants; convert, never slice. Slicing an
+// instant is what produced the UTC date in the first place.
+const localDayOf = iso => {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : localDay(d);
+};
+const today = localDay(new Date());
 
 // Get project name + root + remote (hoisted — used by JOB 1, JOB 1.5 upsert and JOB 2)
 // Primary source: observations (observe.sh writes project_name and cwd into each entry)
@@ -531,7 +544,11 @@ try {
   const priorPropDates = {};
   for (const p of (rawProposals.proposals || [])) {
     if (p.type === "error_resolution" && p.proposed_at) {
-      const day = p.proposed_at.slice(0, 10);
+      // Local day, matching `today` below: mixing UTC-derived and local days in
+      // the same Set makes one local day count twice, and this Set is what the
+      // "3+ distinct days" promotion threshold reads.
+      const day = localDayOf(p.proposed_at);
+      if (!day) continue;
       if (!priorPropDates[p.id]) priorPropDates[p.id] = new Set();
       priorPropDates[p.id].add(day);
     }
