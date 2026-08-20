@@ -98,7 +98,7 @@ Parallel systems (not part of the confidence pipeline):
 - Validates operator-state schema
 - Cleans stale flag files
 
-### _session-learner.sh — Pattern Detection at Session End (329 lines)
+### _session-learner.sh — Pattern Detection at Session End (679 lines)
 - **5 pattern detectors**:
   1. **Error-fix pairs**: is_error flag → same tool success within 5 events
   2. **User corrections**: same file edited 2+ times within 10-event window
@@ -109,8 +109,10 @@ Parallel systems (not part of the confidence pipeline):
 - Enriched proposals with project_name, sample_input, sample_output, err_msg
 - Session-based proposals (overwrite on new day, not accumulative)
 - Reads last 1000 lines of observations (covers parallel sessions)
-- **Cross-OS registry de-dup**: matches the same project across machines by a stable key (git remote, else project name — the name key only across OS families, never on the same machine) so a no-remote project seen from macOS/Linux and Windows collapses into one `_sinapsis-projects.json` entry; per-OS ids are kept as `aliases`, both roots under `roots.{posix,windows}`, and a migration pass cures duplicates that pre-date the feature
-  - **Two families only.** `osFamily()` distinguishes `windows` from `posix`; macOS and Linux both classify as `posix`. A no-remote project seen from a Mac and from a Linux box is therefore *not* de-duplicated, since the name key requires the families to differ. Deliberate: it is what keeps the same-machine guard cheap.
+- **Cross-OS registry de-dup**: matches the same project across machines by a stable key (git remote, else project name — the name key only across OS families, never on the same machine) so a no-remote project seen from any two of macOS, Linux and Windows collapses into one `_sinapsis-projects.json` entry; per-OS ids are kept as `aliases`, each root under `roots.{mac,linux,windows}`, and a migration pass cures duplicates that pre-date the feature
+  - **Three families, asked, not guessed** (#32). The family of a sighting is a fact taken from `uname -s` at observation time (`Darwin` → `mac`, `Linux` → `linux`, `MINGW*`/`MSYS*` → `windows`; exported as `SINAPSIS_UNAME`, overridable by the test suite). Path shape can only prove `windows`, so with no uname available the learner falls back to the legacy 2-family shape classification (`windows`/`posix`).
+  - **Legacy `posix` keys are not reclassified.** A v4.9.0 `roots.posix` may be mac or linux — no way to know from the stored data, so it blocks mac/linux name-merges (the same-machine guard stays safe) until its own machine re-sights the project and rewrites the key with the true family; a posix key holding exactly the re-recorded path is dropped as superseded. Until that rewrite, a legacy entry still does not de-dup mac↔linux — accepted, and it heals itself with use *when the root has not moved*. If the project moved since v4.9.0 the stale posix key survives (nothing proves whose path it was) and that entry keeps missing mac↔linux merges; delete it from `_sinapsis-projects.json` and the next Stop event rebuilds it clean.
+  - **The migration guard checks every family a candidate carries**, not just its last-seen one: folding a multi-family entry into a rival that conflicts on a *non-last* family would silently drop one of its roots and erase a project from the registry. Covered by a dedicated test.
   - **The name key can still be wrong, and says so.** Two *unrelated* projects that merely share a folder name (`app`, `api`, `docs`), seen from a Windows and a posix machine with no remote, will merge — nothing is left to distinguish them. Tightening this by requiring a matching parent directory would break the case the feature exists for, where one project sits at a different path on each OS. Instead each such fusion sets `name_merged: true` on the entry, records the root pair in `name_merge_log`, and appends a line to `_session-learner.log`. To undo one: delete the entry from `_sinapsis-projects.json` — the next Stop event re-creates it from the per-OS observation directories, which are never merged. Giving either project a git remote prevents it recurring, since the remote key takes precedence.
 - Pure deterministic Node.js, NO LLM
 
@@ -341,3 +343,4 @@ Deterministic regex rules — not probabilistic. Always fire when trigger matche
 | v4.8.0 | 2026-07-13 | Plexus extracted to the private team edition — back to individual autonomous learning |
 | v4.8.1 | 2026-07-17 | Installer hardening: hooks wired into an *existing* `settings.json`, legacy archived instead of deleted, Windows copy fixes |
 | v4.9.0 | 2026-07-27 | Cross-OS registry de-dup (@Sergio-LPA), learner false positives eliminated (@juanparisma), non-Bash error detection, secret scrubbing verified for the first time |
+| v4.10.0 | 2026-08-19 | Cross-OS key asks the machine (`uname -s`) instead of guessing from the path: mac↔linux now de-dups; legacy posix keys rewrite themselves with use (#32, approach by @Sergio-LPA) |

@@ -26,6 +26,12 @@ INDEX_FILE="$HOME/.claude/skills/_instincts-index.json"
 PROPOSALS_FILE="$HOME/.claude/skills/_instinct-proposals.json"
 LOG_FILE="$HOME/.claude/skills/_session-learner.log"
 
+# #32: the OS family of a sighting is a fact about the machine, not a guess from the
+# path. Asked once here, at observation time; the node block maps it to mac/linux/
+# windows. Overridable so the test suite can simulate sightings from foreign machines.
+SINAPSIS_UNAME="${SINAPSIS_UNAME:-$(uname -s 2>/dev/null || echo unknown)}"
+export SINAPSIS_UNAME
+
 # Find the most recently MODIFIED observations file (fix #17: was selecting by hash, not recency)
 OBS_FILE=""
 if [ -d "$HOMUNCULUS/projects" ]; then
@@ -230,14 +236,56 @@ try {
       // each machine — two entries for one project when the registry is shared (e.g. via
       // a synced folder). We match on a cross-OS-stable key (the remote when present, else
       // the project name), register every per-OS id as an alias, and record each OS root.
-      // Only two families are distinguished: "windows" and "posix". macOS and Linux both
-      // classify as posix, so a no-remote project seen from a Mac and from a Linux box is
-      // NOT de-duplicated (the name-key merge below requires the families to differ). That
-      // is deliberate: it keeps the same-machine guard cheap. Windows<->posix, the case
-      // this feature targets, is covered.
-      function osFamily(p) {
-        // Windows: "C:\\", "C:/" or Git-Bash "/c/"; everything else (Linux, macOS) is posix.
+      // Three families are distinguished: "mac", "linux" and "windows" (#32). The family
+      // of THIS sighting is a fact about the machine, asked at observation time — the
+      // bash wrapper exports SINAPSIS_UNAME (uname -s: Darwin / Linux / MINGW*-MSYS*),
+      // overridable, which is how the test suite simulates foreign machines. Path SHAPE
+      // can only prove windows ("C:\\", "C:/" or Git-Bash "/c/"); a posix-shaped path
+      // says nothing about mac vs linux, which is why v4.9.0 collapsed both into
+      // "posix". Legacy "posix" keys are NOT reclassified — that would be guessing,
+      // the thing #32 removes. Each machine rewrites its own key on its next sighting
+      // (see the upsert below); until then a legacy entry still does not de-dup
+      // mac<->linux. Readers ignore keys they do not know, so widening 2 -> 3 families
+      // does not change the contract.
+      function pathFamily(p) {
         return (/^[a-zA-Z]:[\\/]/.test(p) || /^\/[a-zA-Z]\//.test(p)) ? "windows" : "posix";
+      }
+      const UNAME = process.env.SINAPSIS_UNAME || "";
+      const obsFamily = /^darwin/i.test(UNAME) ? "mac"
+        : /^(mingw|msys|cygwin|windows)/i.test(UNAME) ? "windows"
+        : /^linux/i.test(UNAME) ? "linux"
+        : null; // uname unavailable: fall back to path shape below (honest legacy keys)
+      const sightFamily = obsFamily || (projectRoot ? pathFamily(projectRoot) : null);
+      // Legacy "posix" may be mac OR linux — it matches both, so the same-machine
+      // guard stays safe until the key is rewritten by its own machine.
+      function familiesMayEqual(a, b) {
+        if (a === b) return true;
+        if (a === "posix") return b === "mac" || b === "linux";
+        if (b === "posix") return a === "mac" || a === "linux";
+        return false;
+      }
+      // True when entry k may already carry a sighting from family fam at a root OTHER
+      // than tolerateRoot (an identical root is the same sighting, not a rival). Keys
+      // of the roots map are facts recorded at sighting time; a root not represented
+      // in the map (pre-crossKey legacy) can only be classified by shape.
+      function mayHaveFamily(k, fam, tolerateRoot) {
+        const roots = (k && k.roots && typeof k.roots === "object") ? k.roots : {};
+        for (const f of Object.keys(roots)) {
+          if (roots[f] && familiesMayEqual(f, fam) && roots[f] !== tolerateRoot) return true;
+        }
+        if (k && k.root && !Object.keys(roots).some(f => roots[f] === k.root)) {
+          if (familiesMayEqual(pathFamily(k.root), fam) && k.root !== tolerateRoot) return true;
+        }
+        return false;
+      }
+      // Family of the LAST sighting of a stored entry: the roots key holding the
+      // current root is a fact; otherwise the path shape is all there is.
+      function lastFamily(p) {
+        if (!p || !p.root) return null;
+        if (p.roots && typeof p.roots === "object") {
+          for (const f of Object.keys(p.roots)) if (p.roots[f] === p.root) return f;
+        }
+        return pathFamily(p.root);
       }
       // Stamp + log a name-key fusion. Only reached for cross-OS-family matches with no
       // remote, i.e. exactly the case that can be wrong. Keeps the last few pairs so a
@@ -287,10 +335,8 @@ try {
         // (name_merged) and logged, so a wrong fusion is a visible event that can be
         // undone by hand instead of silent registry drift.
         if (crossKey === "name:" || !projectRoot) return null;
-        const fam = osFamily(projectRoot);
         const hit = registry.projects.find(p => p && p.crossKey === crossKey && p.root
-          && osFamily(p.root) !== fam
-          && !(p.roots && p.roots[fam]));
+          && !mayHaveFamily(p, sightFamily, projectRoot));
         if (hit) noteNameMerge(hit, projectRoot, hit.root);
         return hit;
       }
@@ -310,7 +356,11 @@ try {
       if (projectRoot) {
         entry.root = projectRoot;                       // most-recently-seen OS path
         if (!entry.roots || typeof entry.roots !== "object") entry.roots = {};
-        entry.roots[osFamily(projectRoot)] = projectRoot;  // { posix, windows }
+        entry.roots[sightFamily] = projectRoot;         // { mac, linux, windows } + legacy posix
+        // Rewrite-own-key (#32): a legacy posix key holding EXACTLY the path recorded
+        // above was written by this machine under the 2-family model — the fact key
+        // supersedes it. Identical strings, so this is replacement, not reclassification.
+        if (sightFamily !== "posix" && entry.roots.posix === projectRoot) delete entry.roots.posix;
       }
       if (projectRemote) {
         entry.remote = projectRemote;
@@ -337,14 +387,20 @@ try {
         for (const p of registry.projects) {
           if (!p) continue;
           p.crossKey = keyOf(p);
-          const famP = p.root ? osFamily(p.root) : null;
+          const famP = lastFamily(p);
           const target = kept.find(k => {
             if (k.crossKey !== p.crossKey) return false;
             if (k.crossKey.startsWith("remote:")) return true;
             if (k.crossKey === "name:" || !k.root || !famP) return false;
-            const pRootFam = (p.roots && p.roots[famP]) || p.root;
-            return osFamily(k.root) !== famP
-              && !(k.roots && k.roots[famP] && k.roots[famP] !== pRootFam);
+            // EVERY family root p carries must be compatible with k, not just the
+            // last-seen one: a multi-family p folding into a k that conflicts on a
+            // non-last family would silently drop one of its roots — two different
+            // projects fused and one of them erased from the registry.
+            const pFams = {};
+            const pR = (p.roots && typeof p.roots === "object") ? p.roots : {};
+            for (const f of Object.keys(pR)) if (pR[f]) pFams[f] = pR[f];
+            if (!pFams[famP]) pFams[famP] = p.root;
+            return Object.keys(pFams).every(f => !mayHaveFamily(k, f, pFams[f]));
           });
           if (!target) { kept.push(p); continue; }
           // Same accepted-but-visible rule as the lookup path: a fusion that rests on
@@ -359,12 +415,17 @@ try {
           // Legacy entries (pre-feature) carry root but no roots map — backfill so the
           // union below actually records both families.
           if (target.root) {
-            const famT = osFamily(target.root);
+            const famT = lastFamily(target);
             if (!target.roots[famT]) target.roots[famT] = target.root;
           }
           const pRoots = (p.roots && typeof p.roots === "object") ? p.roots : {};
           if (p.root && famP && !pRoots[famP]) pRoots[famP] = p.root;
           for (const f of Object.keys(pRoots)) if (!target.roots[f]) target.roots[f] = pRoots[f];
+          // A posix key whose exact path already sits under a fact key is the superseded
+          // 2-family record of that same sighting — drop it (#32).
+          if (target.roots.posix && ["mac", "linux", "windows"].some(f => target.roots[f] === target.roots.posix)) {
+            delete target.roots.posix;
+          }
           if (!target.remote && p.remote) target.remote = p.remote;
           if (p.created && (!target.created || p.created < target.created)) target.created = p.created;
           if (p.last_seen && (!target.last_seen || p.last_seen > target.last_seen)) {

@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.10.0 (2026-08-19)
+
+### Changed
+
+- **Three OS families in the cross-OS registry key** (#32, approach by @Sergio-LPA): `osFamily()` used to classify a project root by path shape into two families — `windows` and `posix` — so a no-remote project seen from a Mac and from a Linux box never de-duplicated. The family of a sighting is now a **fact asked of the machine at observation time** (`uname -s`, exported by the bash wrapper as `SINAPSIS_UNAME`: `Darwin` → `mac`, `Linux` → `linux`, `MINGW*`/`MSYS*` → `windows`) instead of a guess reconstructed from the path afterwards, and `roots` records each of `mac`/`linux`/`windows` under its own key. Readers ignore keys they do not know, so widening 2 → 3 families changes no contract. With no uname available the learner falls back to the old path-shape classification and writes the honest legacy keys.
+- **Legacy `posix` keys are not reclassified — each machine rewrites its own.** Reclassifying `roots.posix` at migration time would be guessing again, so v4.9.0 keys stay where they are and a legacy entry still does not de-dup mac↔linux — *until its own machine re-sights the project*: the sighting records the true family key, and a posix key holding exactly the path just recorded is recognised as that machine's superseded 2-family record and dropped (identical strings — replacement, not reclassification). From that point the migration pass can prove the families differ and the pending pair merges. Windows↔posix merging, the case v4.9.0 shipped for, is unchanged.
+  - **Known limit of the rewrite:** it keys on exact path equality, so a project whose root *moved* since v4.9.0 (folder renamed, home relocated, checkout moved) leaves its stale `roots.posix` in place — nothing can prove whether that path was this machine's or the other one's, and deleting it on a hunch is the guess this issue exists to remove. Such an entry keeps missing mac↔linux merges indefinitely. Conservative by construction: a missed merge is cosmetic, a wrong merge corrupts the registry. Deleting the entry from `_sinapsis-projects.json` re-creates it clean on the next Stop event.
+
+### Tests
+
+- `tests/test-crossos-registry.sh` grows from 13 to 22 assertions and now simulates the sighting machine via `SINAPSIS_UNAME`: mac+linux sightings collapse into one entry with `roots.mac`/`roots.linux` recorded as facts; a legacy posix entry refuses a linux merge and keeps its key untouched; a mac re-sighting rewrites posix → mac and the pending linux entry merges in the same run; a windows sighting still merges with a legacy posix entry (v4.9.0 anti-regression); the migration pass merges two fact-keyed per-OS entries from a synced registry; a multi-family entry is refused a fold into a same-family rival (the dropped-root corruption above); and the no-uname fallback preserves the 2-family path-shape behavior. Every pre-existing assertion re-passes under the new model. Each new assertion was run against the learner *without* the corresponding fix first, to prove it fails on the old behavior before being trusted green: 5 failures against the v4.9.0 learner, and 1 against a build carrying the one-sided migration guard. Suite: **226 tests across 16 files**.
+
 ## v4.9.0 (2026-07-27)
 
 ### Added

@@ -3,7 +3,7 @@ chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
 :: ============================================================
-::  Sinapsis v4.9 — Installer for Windows
+::  Sinapsis v4.10 — Installer for Windows
 ::  Skills on Demand for Claude Code
 ::  https://github.com/Luispitik/sinapsis
 :: ============================================================
@@ -18,7 +18,7 @@ set "SCRIPT_DIR=%~dp0"
 
 echo.
 echo ============================================================
-echo   Sinapsis v4.9 -- Skills on Demand for Claude Code
+echo   Sinapsis v4.10 -- Skills on Demand for Claude Code
 echo   The system that learns and adapts to you
 echo ============================================================
 echo.
@@ -214,9 +214,9 @@ echo   OK %cmd_count% commands installed
 echo.
 echo ============================================================
 if "%UPGRADING%"=="true" (
-    echo   Sinapsis v4.9 upgrade complete!
+    echo   Sinapsis v4.10 upgrade complete!
 ) else (
-    echo   Sinapsis v4.9 installed!
+    echo   Sinapsis v4.10 installed!
 )
 echo ============================================================
 echo.

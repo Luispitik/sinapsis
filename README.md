@@ -1,7 +1,7 @@
-# Sinapsis v4.9
+# Sinapsis v4.10
 
-[![Version](https://img.shields.io/badge/version-4.9.0-blue.svg)](https://github.com/Luispitik/sinapsis)
-[![Tests](https://img.shields.io/badge/tests-217%20passing-green.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-4.10.0-blue.svg)](https://github.com/Luispitik/sinapsis)
+[![Tests](https://img.shields.io/badge/tests-226%20passing-green.svg)](tests/)
 [![CI](https://github.com/Luispitik/sinapsis/actions/workflows/tests.yml/badge.svg)](https://github.com/Luispitik/sinapsis/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -27,6 +27,10 @@ Every time you start a new session, Claude starts from zero. Your preferences, y
 Think of it as going from a dumb terminal to an assistant that actually knows you.
 
 ---
+
+## What's New in v4.10.0 — The registry asks, it no longer guesses
+
+**mac ↔ linux finally de-duplicates.** The cross-OS registry key used to classify a project root by its path shape into two families, `windows` and `posix` — so the same no-remote project seen from a Mac and from a Linux box stayed two entries forever. The family of a sighting is now a *fact asked of the machine at observation time* (`uname -s`: `Darwin` → `mac`, `Linux` → `linux`, `MINGW*`/`MSYS*` → `windows`) instead of a guess reconstructed from the path afterwards. Legacy `posix` keys are deliberately **not** reclassified — that would be guessing again; each machine rewrites its own key the next time it sees the project at the same path, and from then on the pair merges. Where the rewrite cannot apply (a root that moved since v4.9.0) the entry keeps missing that merge rather than guessing — cosmetic, and curable by deleting the entry. Design argued and approved in #32; approach by [@Sergio-LPA](https://github.com/Sergio-LPA).
 
 ## What's New in v4.9.0 — Cleaner signal, one project per project
 
