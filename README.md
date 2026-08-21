@@ -5,6 +5,27 @@
 [![CI](https://github.com/Luispitik/sinapsis/actions/workflows/tests.yml/badge.svg)](https://github.com/Luispitik/sinapsis/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+> ## Unmaintained — archived 2026-08-21
+>
+> **This project is no longer maintained.** The repository is archived and read-only.
+> It stays up, and stays MIT, because the code may still be useful to someone.
+>
+> Claude Code now has persistent memory of its own, which covers most of what this
+> system was built to do. Running Sinapsis alongside it added more noise than signal,
+> so I stopped using it and stopped updating it. v4.10.0 is where it ends.
+>
+> **Read [#36](https://github.com/Luispitik/sinapsis/issues/36) before you install
+> this.** It documents six defects in the activators and hooks that were reported but
+> never fixed: irrelevant instincts matched against entire file contents and injected
+> on every tool call, no per-session dedup, `EVERY_SESSION` passive rules firing on
+> every tool use instead of once, the domain pre-filter silently disabled on non-git
+> projects, the whole daily summary injected regardless of which project the session
+> is about, and a `PostToolUse` hook that reads heredoc bodies as shell code. They are
+> noise and token cost, not data loss — but you should know about them going in.
+>
+> Forks are welcome; that is what MIT is for. Thanks to everyone who reported, argued
+> and shipped here — @Sergio-LPA, @juanparisma, @NestorPVsf, @fvayas.
+
 ### The skill system for Claude Code that learns and adapts to you.
 
 > Stop explaining the same thing twice. Sinapsis remembers, learns, and gets better with every session.
