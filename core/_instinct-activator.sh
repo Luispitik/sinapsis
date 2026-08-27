@@ -102,6 +102,28 @@ process.stdin.on("end", () => {
     }
   } catch(e) { /* no context = no filtering, safe */ }
 
+
+// Inline flag groups like `(?i)` are Python/PCRE syntax. JavaScript has no inline
+// flags: `new RegExp("(?i)foo")` throws "Invalid group", the catch below swallows
+// it, and the instinct silently never matches — for the rest of its life.
+//
+// The patterns are written by the model when an instinct is created, and `(?i)` is
+// the reflex spelling for anyone used to grep or Python. One index in the wild had
+// 50 of 57 instincts dead this way; the six that still fired were simply the ones
+// nobody had prefixed. Nothing reported it, because nothing looked broken: the
+// index was valid JSON, the levels were right, and the occurrence counters just
+// stayed at zero.
+//
+// Stripping the group is safe and lossless here: this matcher already compiles
+// every pattern with the "i" flag, so `(?i)` was redundant on top of being fatal.
+// Other inline groups (`(?m)`, `(?s)`, `(?x)`) are mapped to real flags where a JS
+// equivalent exists, and dropped otherwise, which is still strictly better than
+// the whole instinct disappearing.
+function normalizeInlineFlags(pattern) {
+  if (typeof pattern !== "string" || pattern.indexOf("(?") === -1) return pattern;
+  return pattern.replace(/\(\?([imsxu]+)\)/g, "");
+}
+
   const matches = [];
 
   for (const inst of instincts) {
@@ -113,10 +135,19 @@ process.stdin.on("end", () => {
     if (skipDomains && inst.domain && !skipDomains.has(inst.domain)) continue;
     try {
       // v4.3.1: ReDoS protection — reject patterns with nested quantifiers
-      const tp = inst.trigger_pattern;
+      const tp = normalizeInlineFlags(inst.trigger_pattern);
       if (/(\+|\*|\{)\)?(\+|\*|\{)/.test(tp)) continue; // skip catastrophic backtracking patterns
       if (!new RegExp(tp, "i").test(context)) continue;
-    } catch(e) { continue; }
+    } catch(e) {
+      // A pattern that cannot compile used to be dropped in total silence, so an
+      // instinct could sit in the index for months looking healthy while never
+      // once firing. Say so — once per pattern per run is enough to be findable.
+      try {
+        fs.appendFileSync(process.env.HOME + "/.claude/skills/_instinct.log",
+          new Date().toISOString() + " | BAD_PATTERN | " + inst.id + " | " + e.message + "\n");
+      } catch(_) {}
+      continue;
+    }
     matches.push(inst);
   }
 

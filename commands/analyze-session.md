@@ -140,7 +140,7 @@ PATRON 1 de N
 
   Instinct propuesto:
     inject: "[lo que Claude debe recordar -- max 300 chars, especifico y accionable]"
-    trigger_pattern: "[regex que dispara en contexto relevante]"
+    trigger_pattern: "[regex que dispara en contexto relevante — sintaxis JavaScript]"
     domain: [general|git|security|frontend|database|auth|deploy|operations|tooling|code-quality|testing|...]
 
   Confianza: HIGH (3+ ocurrencias) | MEDIUM (2 ocurrencias) | LOW (1 ocurrencia clara)
@@ -185,6 +185,14 @@ For each pattern the user accepts with `[A]`:
    }
    ```
 4. **Check for trigger_pattern conflicts**: If the regex overlaps with an existing instinct's trigger, warn the user.
+5. **No inline flag groups**: los activadores compilan con `new RegExp(pattern, "i")` en Node,
+   y **JavaScript no admite `(?i)`** (ni `(?m)`, `(?s)`, `(?x)`): `new RegExp("(?i)foo")` lanza
+   *Invalid group*. Escribe el patrón **sin** el prefijo — la insensibilidad a mayúsculas ya
+   viene puesta por la flag `"i"`. Es el error más fácil de cometer aquí, porque `(?i)` es la
+   grafía natural en Python y en grep, y el más caro: hasta v4.9.1 el `catch` del activador
+   descartaba el instinct **en silencio** y se quedaba en el índice para siempre sin dispararse
+   ni una vez. Desde v4.9.1 los activadores lo toleran y lo registran, pero un patrón limpio se
+   lee mejor y no depende del saneado.
 
 For each pattern the user edits with `[E]`:
 - Let the user modify: inject text, trigger_pattern, domain, or confidence level

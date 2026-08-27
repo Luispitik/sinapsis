@@ -43,6 +43,15 @@ process.stdin.on("end", () => {
   const context = tool + " " + inputContent;
 
   // Match rules: test trigger regex against context
+  // Same inline-flag trap as the instinct activator: `(?i)` is Python/PCRE syntax
+  // that JavaScript rejects, and the catch below would hide the rule forever. The
+  // shipped rules are clean today, but they are hand-written like the instincts, so
+  // the next one added is one `(?i)` away from vanishing without a trace.
+  function normalizeInlineFlags(pattern) {
+    if (typeof pattern !== "string" || pattern.indexOf("(?") === -1) return pattern;
+    return pattern.replace(/\(\?([imsxu]+)\)/g, "");
+  }
+
   const matched = [], matchedIds = [];
   for (const rule of rules) {
     if (!rule.trigger || !rule.inject) continue;
@@ -53,8 +62,9 @@ process.stdin.on("end", () => {
     }
     try {
       // v4.3.1: ReDoS protection — reject patterns with nested quantifiers
-      if (/(\+|\*|\{)\)?(\+|\*|\{)/.test(rule.trigger)) continue;
-      if (new RegExp(rule.trigger, "i").test(context)) {
+      const trigger = normalizeInlineFlags(rule.trigger);
+      if (/(\+|\*|\{)\)?(\+|\*|\{)/.test(trigger)) continue;
+      if (new RegExp(trigger, "i").test(context)) {
         matched.push(rule.inject); matchedIds.push(rule.id || "unknown");
       }
     } catch(e) { continue; }
