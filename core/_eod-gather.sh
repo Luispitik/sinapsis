@@ -17,6 +17,13 @@
 #            path.basename is platform-specific); foreign roots are skipped;
 #            HOME || USERPROFILE resolved; projects merged by name across OS.
 #
+# v4.9.1 bug fix (2026-07-30):
+#   - "today" was computed and matched in UTC, so the reported day was the UTC
+#     one, not the operator's. West of Greenwich the two disagree every evening
+#     — and every scheduled close runs in the evening. Now the local day is an
+#     explicit [midnight, next midnight) window and timestamps are compared as
+#     instants, not string prefixes. See the comment at `dayStart`.
+#
 # Test overrides (defaults unchanged): SINAPSIS_HOMUNCULUS points the data dir
 # elsewhere, SINAPSIS_SKILLS the registry dir. Used by tests/test-eod-gather.sh.
 
@@ -27,7 +34,7 @@ if [ "${SINAPSIS_DEBUG:-}" = "1" ]; then
 fi
 
 if [ ! -d "$HOMUNCULUS/projects" ] && [ ! -f "$HOMUNCULUS/observations.jsonl" ]; then
-  echo '{"date":"'$(date -u +%Y-%m-%d)'","project_count":0,"total_observations":0,"projects":[]}'
+  echo '{"date":"'$(date +%Y-%m-%d)'","project_count":0,"total_observations":0,"projects":[]}'
   exit 0
 fi
 
@@ -41,7 +48,30 @@ const homunculus = process.env.SINAPSIS_HOMUNCULUS || path.join(HOME, ".claude",
 const skillsDir = process.env.SINAPSIS_SKILLS || path.join(HOME, ".claude", "skills");
 const projectsDir = path.join(homunculus, "projects");
 const rootObsFile = path.join(homunculus, "observations.jsonl");
-const today = new Date().toISOString().slice(0, 10);
+
+// The day the operator worked is the LOCAL one; observation timestamps are UTC
+// (…Z). Matching a date STRING against a UTC timestamp mixes the two: in UTC-5
+// the UTC bucket for a date runs from 19:00 the previous local day to 19:00
+// that local day. A prefix match therefore reports the WRONG day in both
+// directions — after 19:00 local it counts the next bucket (minutes old, looks
+// like an empty day), and a close written from that bucket steals the previous
+// evening (looks like a busier day than it was). Both were seen on 2026-07-30:
+// the same day was reported as 27 observations and as ~522; the truth was 382.
+// So: build the local day as an explicit [start, end) window and compare
+// instants, not strings.
+const now = new Date();
+const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+// Next local midnight via the calendar, not +24h — that stays correct across a
+// DST change, where a local day is 23 or 25 hours long.
+const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+const pad = n => String(n).padStart(2, "0");
+const today = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+
+function isToday(ts) {
+  if (!ts) return false;
+  const t = Date.parse(ts);
+  return Number.isFinite(t) && t >= dayStart && t < dayEnd;
+}
 
 // Cross-OS basename: split on BOTH / and \ regardless of host platform.
 // Node path.basename is platform-specific (posix ignores \), which corrupts
@@ -108,7 +138,7 @@ function parseToday(obsFile) {
   for (const line of lines) {
     try {
       const obj = JSON.parse(line);
-      if (obj.timestamp && obj.timestamp.startsWith(today)) out.push(obj);
+      if (isToday(obj.timestamp)) out.push(obj);
     } catch(e) {}
   }
   return out;
